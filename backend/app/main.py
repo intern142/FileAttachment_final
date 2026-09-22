@@ -16,7 +16,8 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     
     db = next(get_db())
-    try        if db.query(Contractor).count() == 0:
+    try:
+        if db.query(Contractor).count() == 0:
             default_contractors = [
                 Contractor(name="ABC Contractors", short_code="ABC"),
                 Contractor(name="XYZ Builders", short_code="XYZ"),
