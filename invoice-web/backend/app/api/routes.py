@@ -2,6 +2,7 @@ import os
 import io
 import uuid
 import json
+import re
 import shutil
 from datetime import datetime
 from decimal import Decimal
@@ -84,15 +85,22 @@ async def upload_invoice(
     }
     lines = ocr_text.split('\n')
     for line in lines:
-        line_lower = line.lower()
+        line_lower = line.lower().strip()
+        value = re.sub(r'^[^:]*:', '', line).strip()
+        if not value:
+            continue
         if any(kw in line_lower for kw in ['contractor', 'vendor', 'supplier']):
-            ocr_data['contractor'] = line.strip()
+            ocr_data['contractor'] = value
         if any(kw in line_lower for kw in ['source', 'channel', 'via']):
-            ocr_data['source'] = line.strip()
+            ocr_data['source'] = value
         if any(kw in line_lower for kw in ['date', 'invoice date']):
-            ocr_data['date'] = line.strip()
+            date_match = re.search(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}', line)
+            if date_match:
+                ocr_data['date'] = date_match.group(0).replace('/', '-')
         if any(kw in line_lower for kw in ['amount', 'total', 'sum']):
-            ocr_data['amount'] = line.strip()
+            amount_match = re.search(r'\d+(?:[.,]\d+)?', line)
+            if amount_match:
+                ocr_data['amount'] = amount_match.group(0).replace(',', '')
     ocr_file = os.path.join(TEMP_DIR, f"{job_id}_ocr.json")
     with open(ocr_file, "w") as f:
         json.dump(ocr_data, f)
