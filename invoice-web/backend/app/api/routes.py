@@ -27,7 +27,7 @@ from ..schemas import (
     InvoiceOut, InvoiceListParams, ConfirmRequest, ContractorOut, SourceOut, OCRResult
 )
 from ..services.organize import process_confirm
-from ..api.auth import get_current_user
+from .auth import get_current_user
 from ..core.config import get_settings
 
 settings = get_settings()
