@@ -87,6 +87,9 @@ frontend/templates/register.html
 7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__`, `ValueError: password > 72 bytes` caused `/auth/register` → 500. Fixed by pinning `bcrypt==4.0.1` in requirements.txt (passlib 1.7.0 expects `__about__`).
 7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__`, `ValueError: password > 72 bytes` caused `/auth/register` → 500. Fixed by pinning `bcrypt==4.0.1` in requirements.txt (passlib 1.7.0 expects `__about__`).
 7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__`, `ValueError: password > 72 bytes` caused `/auth/register` → 500. Fixed by pinning `bcrypt==4.0.1` in requirements.txt (passlib 1.7.0 expects `__about__`).
+7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__`, `ValueError: password > 72 bytes` caused `/auth/register` → 500. Fixed by pinning `bcrypt==4.0.1` in requirements.txt (passlib 1.7.0 expects `__about__`).
+7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__`, `ValueError: password > 72 bytes` caused `/auth/register` → 500. Fixed by pinning `bcrypt==4.0.1` in requirements.txt (passlib 1.7.0 expects `__about__`).
+7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__`, `ValueError: password > 72 bytes` caused `/auth/register` → 500. Fixed by pinning `bcrypt==4.0.1` in requirements.txt (passlib 1.7.0 expects `__about__`).
 
 ## Decisions Made
 
