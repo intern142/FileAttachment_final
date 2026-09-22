@@ -1,5 +1,5 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError
@@ -29,11 +29,11 @@ def get_db_session():
 
 
 @router.post("/register", response_model=Token)
-def register(user_in: UserCreate, db: Session = Depends(get_db_session)):
-    existing = db.query(User).filter(User.email == user_in.email).first()
+def register(email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db_session)):
+    existing = db.query(User).filter(User.email == email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(email=user_in.email, hashed_password=get_password_hash(user_in.password))
+    user = User(email=email, hashed_password=get_password_hash(password))
     db.add(user)
     db.commit()
     db.refresh(user)
