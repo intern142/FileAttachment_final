@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Register - Invoice Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">Register</h4>
+            </div>
+            <div class="card-body">
+                <form id="registerForm" hx-post="/auth/register" hx-target="#registerResult" hx-swap="innerHTML">
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-control" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" name="password" class="form-control" required minlength="6">
+                    </div>
+                    <div id="registerResult"></div>
+                    <button type="submit" class="btn btn-success w-100" id="registerBtn">
+                        <span class="spinner-border spinner-border-sm me-2" role="status" style="display: none;"></span>
+                        Register
+                    </button>
+                </form>
+                <div class="text-center mt-3">
+                    <small>Already have an account? <a href="/login">Login</a></small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('registerForm').addEventListener('htmx:beforeRequest', function() {
+    document.getElementById('registerBtn').disabled = true;
+    document.getElementById('registerBtn').querySelector('.spinner-border').style.display = 'inline-block';
+});
+document.getElementById('registerForm').addEventListener('htmx:afterRequest', function(evt) {
+    document.getElementById('registerBtn').disabled = false;
+    document.getElementById('registerBtn').querySelector('.spinner-border').style.display = 'none';
+    if (evt.detail.successful) {
+        const resp = evt.detail.xhr.response;
+        if (resp && resp.access_token) {
+            localStorage.setItem('access_token', resp.access_token);
+            window.location.href = '/';
+        }
+    }
+});
+</script>
+{% endblock %}

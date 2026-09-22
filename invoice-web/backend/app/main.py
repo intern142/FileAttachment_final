@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,7 @@ from .database import init_db, engine
 from .models import Base, Contractor, Source
 from .api import auth, routes
 from .core.config import get_settings
+from .api.auth import get_current_user
 from sqlalchemy.orm import Session
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -61,8 +62,18 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "s
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+async def root(request: Request, current_user = Depends(get_current_user)):
     return templates.TemplateResponse("upload.html", {"request": request})
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
 
 
 @app.get("/invoices", response_class=HTMLResponse)

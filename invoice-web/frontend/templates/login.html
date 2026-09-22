@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Invoice Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">Login</h4>
+            </div>
+            <div class="card-body">
+                <form id="loginForm" hx-post="/auth/login" hx-target="#loginResult" hx-swap="innerHTML">
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="username" class="form-control" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" name="password" class="form-control" required>
+                    </div>
+                    <div id="loginResult"></div>
+                    <button type="submit" class="btn btn-primary w-100" id="loginBtn">
+                        <span class="spinner-border spinner-border-sm me-2" role="status" style="display: none;"></span>
+                        Login
+                    </button>
+                </form>
+                <div class="text-center mt-3">
+                    <small>Don't have an account? <a href="/register">Register</a></small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('htmx:beforeRequest', function() {
+    document.getElementById('loginBtn').disabled = true;
+    document.getElementById('loginBtn').querySelector('.spinner-border').style.display = 'inline-block';
+});
+document.getElementById('loginForm').addEventListener('htmx:afterRequest', function(evt) {
+    document.getElementById('loginBtn').disabled = false;
+    document.getElementById('loginBtn').querySelector('.spinner-border').style.display = 'none';
+    if (evt.detail.successful) {
+        const resp = evt.detail.xhr.response;
+        if (resp && resp.access_token) {
+            localStorage.setItem('access_token', resp.access_token);
+            window.location.href = '/';
+        }
+    }
+});
+</script>
+{% endblock %}
