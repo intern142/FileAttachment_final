@@ -1,17 +1,17 @@
 # Project Status - Invoice Manager
 
 **Last Updated:** 2026-09-22
-**Branch:** `Member_B` (pushed to origin)
-**Commit:** `ccba1b5`
+**Branch:** `main` (merged from Member_B)
+**Latest Commit:** `24b32fd`
 
 ---
 
-## ✅ Completed Tasks (Member B Scope)
+## ✅ Completed Tasks (Full Project - Member A + Member B)
 
 ### Infrastructure
-- [x] `docker-compose.yml` - PostgreSQL 16 + Backend services
-- [x] `backend/Dockerfile` - Python 3.11-slim with Tesseract + Poppler
-- [x] `backend/requirements.txt` - All dependencies pinned
+- [x] `docker-compose.yml` - PostgreSQL 16 + Backend services (context: root, dockerfile: ./backend/Dockerfile)
+- [x] `backend/Dockerfile` - Python 3.11-slim with Tesseract + Poppler + libpq + gcc
+- [x] `backend/requirements.txt` - All dependencies pinned (bcrypt 4.0.1, passlib 1.7.4)
 
 ### Core Backend
 - [x] `backend/app/core/config.py` - Pydantic Settings (env-based)
@@ -23,7 +23,9 @@
 - [x] `backend/app/schemas.py` - Pydantic models for all API contracts
 
 ### Auth API
-- [x] `backend/app/api/auth.py` - `/auth/register`, `/auth/login`, `get_current_user` dependency
+- [x] `backend/app/api/auth.py` - `/auth/register` (form-data), `/auth/login` (form-data), `get_current_user` dependency
+- [x] Register accepts `application/x-www-form-urlencoded` (HTMX compatible)
+- [x] Login uses OAuth2PasswordRequestForm (form-data)
 
 ### Services
 - [x] `backend/app/services/organize.py` - Path generation, file move, DB save, audit logging
@@ -43,6 +45,8 @@
 
 ### Main App
 - [x] `backend/app/main.py` - FastAPI + lifespan (DB init + seed contractors/sources)
+- [x] Route protection: `/` (upload) requires valid JWT via `Depends(get_current_user)`
+- [x] `/login` and `/register` pages accessible without auth
 
 ### Frontend Templates
 - [x] `frontend/templates/base.html` - Bootstrap 5 + HTMX + auth header injection
@@ -50,10 +54,12 @@
 - [x] `frontend/templates/review.html` - Image preview, editable fields, HTMX confirm → redirect to list
 - [x] `frontend/templates/list.html` - Filter form + HTMX table partial
 - [x] `frontend/templates/partials/invoice_table.html` - Reusable table with pagination
+- [x] `frontend/templates/login.html` - HTMX form, stores JWT in localStorage, redirects to `/`
+- [x] `frontend/templates/register.html` - HTMX form, stores JWT in localStorage, redirects to `/`
 
 ---
 
-## 📁 File Tree (Member_B branch)
+## 📁 File Tree (main branch)
 
 ```
 invoice-web/
@@ -80,6 +86,8 @@ invoice-web/
 │       ├── upload.html
 │       ├── review.html
 │       ├── list.html
+│       ├── login.html
+│       ├── register.html
 │       └── partials/
 │           └── invoice_table.html
 └── storage/ (created at runtime)
@@ -87,46 +95,55 @@ invoice-web/
 
 ---
 
-## 🚀 How to Resume / Test
+## 🚀 How to Run
 
 ```bash
-# 1. Clone & switch to branch
+# 1. Clone
 git clone https://github.com/intern142/FileAttachment_final.git
 cd FileAttachment_final
-git checkout Member_B
 
 # 2. Start services
 cd invoice-web
 docker-compose up --build
 
 # 3. Open browser
-# http://localhost:8000
+# http://localhost:8000 (or http://<your-lan-ip>:8000 for LAN access)
 ```
 
 ### Flow Test
-1. **Register** → `/auth/register`
-2. **Login** → `/auth/login` (token stored in localStorage)
+1. **Register** → `/register` → auto-login → upload page
+2. **Login** → `/login` → upload page
 3. **Upload** → Drop image/PDF → OCR runs → redirects to `/review/{job_id}`
 4. **Review** → Edit contractor/source/date/amount → **Confirm**
 5. **List** → `/invoices` → Filter, paginate, download
 
 ---
 
-## 🔄 Sync with Member A
+## 🔑 Key Fixes Applied (Post Member_B)
 
-| Member A Branch | Status |
-|----------------|--------|
-| `feat/upload-ocr-review` | Not yet pushed |
+| Issue | Fix |
+|-------|-----|
+| bcrypt 4.2.1 `__about__` error | Downgraded to `bcrypt==4.0.1` |
+| passlib 1.7.0 72-byte limit | Upgraded to `passlib==1.7.4` |
+| Register endpoint JSON-only | Changed to accept `Form(...)` for HTMX |
+| Route protection | `/` now requires JWT via `Depends(get_current_user)` |
+| Login/Register pages | Added `/login` and `/register` templates with HTMX |
+| Docker static files | Fixed volume mount conflict (removed `./backend:/app`) |
+| Static file paths | Used absolute paths via `BASE_DIR` in main.py |
+| psycopg2 build | Added `libpq-dev`, `gcc`, `build-essential` to Dockerfile |
 
-**When Member A pushes:**
+---
+
+## 📡 LAN Access
+
 ```bash
-git fetch origin
-git checkout main
-git merge origin/feat/upload-ocr-review   # or rebase Member_B onto updated main
-# Resolve any conflicts (mainly models.py, schemas.py, auth.py if they differ)
-```
+# Find your LAN IP
+ipconfig | findstr IPv4
+# Share: http://<your-lan-ip>:8000
 
-**No additional coding needed for Member B** — branch is complete.
+# Allow port 8000 in Windows Firewall (run as Admin):
+New-NetFirewallRule -DisplayName "Invoice App" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
+```
 
 ---
 
@@ -141,11 +158,9 @@ git merge origin/feat/upload-ocr-review   # or rebase Member_B onto updated main
 
 ## 📝 Next Steps (if any)
 
-1. Wait for Member A to push `feat/upload-ocr-review`
-2. Merge to `main`
-3. Optional: Polish OCR extraction, add validation, improve UI
-4. Deploy to staging
+1. Polish OCR extraction, add validation, improve UI
+2. Deploy to staging (Render, Railway, Fly.io, etc.)
 
 ---
 
-**Branch is ready. No uncommitted changes.**
+**Status:** ✅ All features complete, tested, and pushed to `main` (commit `24b32fd`).
