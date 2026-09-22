@@ -76,7 +76,20 @@ frontend/templates/register.html
 4. **Syntax error in main.py** - Missing colon after `try:` → fixed
 5. **Template paths** - Frontend not copied to container → fixed Dockerfile COPY paths
 6. **Build context** - Dockerfile in backend/ but context is root → updated docker-compose.yml build config
-7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__` and `ValueError: password cannot be longer than 72 bytes` caused `/auth/register` → 500. Fixed by pinning `passlib[bcrypt]==1.7.4` and `bcrypt==4.0.1` in requirements.txt, then rebuilding with `--no-cache`.
+7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__` and `ValueError: password cannot be longer than 72 bytes` caused `/auth/register` → 500. Fixed by pinning `passlib[bcrypt]==1.7.4` and `bcrypt==4.0.1` in requirements.txt; also installed pinned versions inside the running container and restarted (image pip layer was cached).
+8. **Templates missing in container** - `RuntimeError: File at path frontend/templates/upload.html does not exist` on `/` and `/login` → 500, because `./backend:/app` bind-mount shadowed the image's `/app/frontend`. Fixed by adding `./frontend:/app/frontend` volume to docker-compose.yml.
+9. **401 on protected routes despite valid token** - `get_current_user` parsed the JWT payload (which carries `sub`) into `TokenData(user_id=...)`, always yielding `None` → 401 "Could not validate credentials". Fixed in `auth.py` by reading `sub` directly and converting to int.
+10. **bcrypt 5.0.0 still active in running container** - Despite requirements.txt pinning, the image pip layer was cached. Fixed by `pip install --force-reinstall bcrypt==4.0.1 passlib==1.7.4` inside the container + restart; verified `bcrypt 4.0.1` / `passlib 1.7.4`.
+
+## E2E Verification (Member A flow, done locally)
+
+- `POST /auth/register` (JSON) → 200, returns `access_token`
+- `POST /auth/login` (form-urlencoded) → 200, returns `access_token`
+- `POST /api/upload` (Bearer + multipart file `storage/temp/test_invoice.png`) → 200, `job_id` + OCR text + parsed contractor/source/date/amount + contractor/source dropdown options
+- `GET /review/{job_id}` (Bearer) → 200, full review page with `/temp/{job_id}_{filename}` image preview and form pre-filled from OCR
+- `GET /` → 200
+
+Note: OCR `amount` prefill comes back as raw line `Amount: 1250.00 USD` (not stripped to number) - cosmetic, backend.net parsing is enough to display; confirm endpoint can clean it.
 
 ## Decisions Made
 

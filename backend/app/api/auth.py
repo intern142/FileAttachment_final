@@ -12,7 +12,7 @@ from app.core.security import (
     decode_access_token,
 )
 from app.models import User
-from app.schemas import UserCreate, UserLogin, Token, TokenData
+from app.schemas import UserCreate, UserLogin, Token
 from app.database import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -32,10 +32,14 @@ def get_current_user(
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
-    token_data = TokenData(**payload)
-    if token_data.user_id is None:
+    sub = payload.get("sub")
+    if sub is None:
         raise credentials_exception
-    user = db.query(User).filter(User.id == token_data.user_id).first()
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        raise credentials_exception
+    user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise credentials_exception
     return user
