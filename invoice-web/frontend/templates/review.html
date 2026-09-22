@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Review Invoice - Invoice Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Review Extracted Data</h4>
+                <span class="badge bg-info">Job: {{ job_id }}</span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Image Preview</h6>
+                        <img id="previewImg" class="preview-img w-100" src="{{ image_url }}" alt="Invoice preview">
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Extracted Information</h6>
+                        <form id="reviewForm" hx-post="/api/confirm" hx-target="#confirmResult" hx-swap="innerHTML">
+                            <input type="hidden" name="job_id" value="{{ job_id }}">
+                            <div class="mb-3">
+                                <label class="form-label">Contractor <span class="text-danger">*</span></label>
+                                <select name="contractor_id" class="form-select" required>
+                                    <option value="">Select contractor</option>
+                                    {% for c in contractors %}
+                                    <option value="{{ c.id }}" {% if c.name == extracted.contractor %}selected{% endif %}>{{ c.name }} ({{ c.short_code }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Source <span class="text-danger">*</span></label>
+                                <select name="source_id" class="form-select" required>
+                                    <option value="">Select source</option>
+                                    {% for s in sources %}
+                                    <option value="{{ s.id }}" {% if s.name == extracted.source %}selected{% endif %}>{{ s.name }} ({{ s.short_code }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Date <span class="text-danger">*</span></label>
+                                <input type="date" name="date" class="form-control" value="{{ extracted.date or '' }}" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Amount <span class="text-danger">*</span></label>
+                                <input type="number" step="0.01" name="amount" class="form-control" value="{{ extracted.amount or '' }}" required>
+                            </div>
+                            <div id="confirmResult"></div>
+                            <button type="submit" class="btn btn-success w-100" id="confirmBtn">
+                                <span class="spinner-border spinner-border-sm me-2" role="status" style="display: none;"></span>
+                                Confirm & Save
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <hr class="my-4">
+                <div class="text-muted small">
+                    <strong>Raw OCR Text:</strong>
+                    <pre class="bg-light p-3 mt-2 rounded" style="max-height: 200px; overflow: auto;">{{ ocr_text }}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('reviewForm').addEventListener('htmx:beforeRequest', function() {
+    document.getElementById('confirmBtn').disabled = true;
+    document.getElementById('confirmBtn').querySelector('.spinner-border').style.display = 'inline-block';
+});
+document.getElementById('reviewForm').addEventListener('htmx:afterRequest', function(evt) {
+    document.getElementById('confirmBtn').disabled = false;
+    document.getElementById('confirmBtn').querySelector('.spinner-border').style.display = 'none';
+    if (evt.detail.successful) {
+        alert('Invoice saved successfully!');
+        window.location.href = '/invoices';
+    }
+});
+</script>
+{% endblock %}

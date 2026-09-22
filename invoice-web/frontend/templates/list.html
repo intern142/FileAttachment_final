@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Invoices - Invoice Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Invoices</h2>
+    <a href="/" class="btn btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg me-1" viewBox="0 0 16 16">
+            <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2Z"/>
+        </svg>
+        Upload New
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form hx-get="/invoices" hx-target="#invoices-table" hx-indicator="#loading" hx-push-url="true" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Contractor</label>
+                <select name="contractor_id" class="form-select">
+                    <option value="">All Contractors</option>
+                    {% for c in contractors %}
+                    <option value="{{ c.id }}" {% if selected_contractor == c.id %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Source</label>
+                <select name="source_id" class="form-select">
+                    <option value="">All Sources</option>
+                    {% for s in sources %}
+                    <option value="{{ s.id }}" {% if selected_source == s.id %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Date From</label>
+                <input type="date" name="date_from" class="form-control" value="{{ date_from or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Date To</label>
+                <input type="date" name="date_to" class="form-control" value="{{ date_to or '' }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-outline-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="invoices-table">
+    {% include "partials/invoice_table.html" %}
+</div>
+
+<div id="loading" class="htmx-indicator text-center my-4">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
+{% endblock %}

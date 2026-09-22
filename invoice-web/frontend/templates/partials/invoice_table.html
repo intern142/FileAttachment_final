@@ -1,0 +1,59 @@
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Contractor</th>
+                <th>Source</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in invoices %}
+            <tr>
+                <td>{{ invoice.date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ invoice.contractor.name if invoice.contractor else 'N/A' }}</td>
+                <td>{{ invoice.source.name if invoice.source else 'N/A' }}</td>
+                <td class="fw-bold">${{ "%.2f"|format(invoice.amount) }}</td>
+                <td>
+                    <span class="badge bg-{% if invoice.status == 'confirmed' %}success{% elif invoice.status == 'pending' %}warning{% else %}danger{% endif %} badge-status">
+                        {{ invoice.status }}
+                    </span>
+                </td>
+                <td>
+                    <a href="/invoices/{{ invoice.id }}/download" class="btn btn-sm btn-outline-secondary">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+                            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                            <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                        </svg>
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="text-center text-muted py-4">No invoices found</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if pagination and pagination.total_pages > 1 %}
+<nav aria-label="Invoice pagination">
+    <ul class="pagination justify-content-center">
+        {% if pagination.page > 1 %}
+        <li class="page-item">
+            <a class="page-link" href="#" hx-get="/invoices?page={{ pagination.page - 1 }}&contractor_id={{ selected_contractor or '' }}&source_id={{ selected_source or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}" hx-target="#invoices-table" hx-push-url="true">Previous</a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ pagination.page }} of {{ pagination.total_pages }}</span></li>
+        {% if pagination.page < pagination.total_pages %}
+        <li class="page-item">
+            <a class="page-link" href="#" hx-get="/invoices?page={{ pagination.page + 1 }}&contractor_id={{ selected_contractor or '' }}&source_id={{ selected_source or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}" hx-target="#invoices-table" hx-push-url="true">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
