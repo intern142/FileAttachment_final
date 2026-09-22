@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -144,7 +144,7 @@ async def serve_temp_file(filename: str):
     return FileResponse(file_path)
 
 
-@router.post("/confirm", response_model=InvoiceOut)
+@router.post("/confirm")
 async def confirm_invoice(
     request: Request,
     job_id: str = Form(...),
@@ -194,7 +194,7 @@ async def confirm_invoice(
                 os.remove(os.path.join(temp_dir, f))
             except:
                 pass
-    return invoice
+    return RedirectResponse(url="/invoices", status_code=303)
 
 
 @router.get("/invoices", response_model=List[InvoiceOut])
