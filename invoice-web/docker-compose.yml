@@ -12,11 +12,12 @@ services:
       - "5432:5432"
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
       - ./storage:/storage
     environment:
       DATABASE_URL: postgresql://app:app@db:5432/invoices

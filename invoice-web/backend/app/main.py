@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +11,8 @@ from .models import Base, Contractor, Source
 from .api import auth, routes
 from .core.config import get_settings
 from sqlalchemy.orm import Session
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 settings = get_settings()
 
@@ -52,9 +55,9 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(routes.router)
 
-templates = Jinja2Templates(directory="frontend/templates")
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "frontend", "templates"))
 
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "static")), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
