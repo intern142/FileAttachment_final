@@ -194,7 +194,7 @@ async def confirm_invoice(
                 os.remove(os.path.join(temp_dir, f))
             except:
                 pass
-    return RedirectResponse(url="/invoices/page", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @router.get("/invoices", response_model=List[InvoiceOut])
