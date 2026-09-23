@@ -54,11 +54,6 @@
                         </form>
                     </div>
                 </div>
-                <hr class="my-4">
-                <div class="text-muted small">
-                    <strong>Raw OCR Text:</strong>
-                    <pre class="bg-light p-3 mt-2 rounded" style="max-height: 200px; overflow: auto;">{{ ocr_text }}</pre>
-                </div>
             </div>
         </div>
     </div>
@@ -74,7 +69,7 @@ document.getElementById('reviewForm').addEventListener('htmx:afterRequest', func
     document.getElementById('confirmBtn').querySelector('.spinner-border').style.display = 'none';
     if (evt.detail.successful) {
         alert('Invoice saved successfully!');
-        window.location.href = '/invoices';
+        window.location.href = '/';
     }
 });
 </script>

@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +41,71 @@ def move_file_to_storage(temp_path: str, dest_path: str, extension: str) -> str:
     ensure_directory(os.path.dirname(dest_path))
     final_path = f"{dest_path}{extension}"
     shutil.move(temp_path, final_path)
+    return final_path
+
+
+def sanitize_filename_part(value: str) -> str:
+    """Make an extracted name safe for use as a filename part."""
+    text = str(value or "").strip()
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", text)
+    text = re.sub(r"-{2,}", "-", text)  # keep the "--" separator unambiguous
+    text = re.sub(r"\s+", " ", text).strip(" .-")
+    return text or "UNKNOWN"
+
+
+def build_invoice_filename(
+    contractor: str,
+    purchased_from: str,
+    invoice_date: datetime,
+) -> str:
+    """CONTRACTOR--PURCHASED_FROM--YYYY-MM-DD(ext applied later)."""
+    date_part = invoice_date.strftime("%Y-%m-%d")
+    return (
+        f"{sanitize_filename_part(contractor)}"
+        f"--{sanitize_filename_part(purchased_from)}"
+        f"--{date_part}"
+    )
+
+
+def generate_extracted_storage_path(
+    user_id: int,
+    contractor: str,
+    purchased_from: str,
+    invoice_date: datetime,
+) -> str:
+    quarter = f"Q{(invoice_date.month - 1) // 3 + 1}"
+    month = invoice_date.strftime("%m_%B")
+    week_num = (invoice_date.day - 1) // 7 + 1
+    week = f"Week_{week_num:02d}"
+    filename = build_invoice_filename(contractor, purchased_from, invoice_date)
+    return os.path.join(
+        settings.storage_path,
+        str(user_id),
+        quarter,
+        month,
+        week,
+        filename,
+    )
+
+
+def save_extracted_invoice(
+    user_id: int,
+    contractor: str,
+    purchased_from: str,
+    invoice_date: datetime,
+    extension: str,
+    content: bytes,
+) -> str:
+    """Save the extracted invoice to storage using the CONTRACTOR--PURCHASED_FROM--DATE name."""
+    dest = generate_extracted_storage_path(user_id, contractor, purchased_from, invoice_date)
+    ensure_directory(os.path.dirname(dest))
+    final_path = f"{dest}{extension}"
+    counter = 1
+    while os.path.exists(final_path):
+        final_path = f"{dest}_{counter}{extension}"
+        counter += 1
+    with open(final_path, "wb") as f:
+        f.write(content)
     return final_path
 
 

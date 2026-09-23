@@ -103,6 +103,14 @@ class OCRResult(BaseModel):
     amount: Optional[str] = None
 
 
+class ExtractResult(BaseModel):
+    contractor: str
+    purchased_from: str
+    date: str
+    filename: str
+    saved: bool = True
+
+
 class ConfirmRequest(BaseModel):
     job_id: str
     contractor_id: int

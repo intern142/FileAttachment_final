@@ -13,7 +13,7 @@ from .core.config import get_settings
 from .api.auth import get_current_user, get_current_user_optional
 from sqlalchemy.orm import Session
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.getcwd()
 
 settings = get_settings()
 

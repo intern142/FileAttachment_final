@@ -32,6 +32,18 @@
                     </button>
                 </div>
                 <div id="error" class="alert alert-danger mt-3" style="display: none;"></div>
+                <div id="success" class="alert alert-success mt-3" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">Extracted Files</h5>
+            </div>
+            <div class="card-body">
+                <div id="extractedFiles">
+                    <p class="text-muted mb-0">No files extracted yet.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -46,7 +58,60 @@ const fileName = document.getElementById('fileName');
 const uploadBtn = document.getElementById('uploadBtn');
 const btnText = document.getElementById('btnText');
 const error = document.getElementById('error');
+const success = document.getElementById('success');
+const extractedFilesBox = document.getElementById('extractedFiles');
 let selectedFile = null;
+
+function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+function fileItemHtml(f) {
+    const downloadUrl = '/api/extracted-file?path=' + encodeURIComponent(f.path || '');
+    return `
+    <div class="card mb-2">
+        <div class="card-body py-2 px-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <div class="fw-semibold mb-0">${escapeHtml(f.filename)}</div>
+                <div class="small text-muted">
+                    ${escapeHtml(f.contractor || '')}${f.contractor && f.purchased_from ? ' &rarr; ' : ''}${escapeHtml(f.purchased_from || '')}${f.date ? ' &middot; ' + escapeHtml(f.date) : ''}
+                </div>
+            </div>
+            <a class="btn btn-sm btn-outline-primary" href="${downloadUrl}">Download</a>
+        </div>
+    </div>`;
+}
+
+function renderExtractedFiles(files) {
+    if (!files || !files.length) {
+        extractedFilesBox.innerHTML = '<p class="text-muted mb-0">No files extracted yet.</p>';
+        return;
+    }
+    extractedFilesBox.innerHTML = files.map(fileItemHtml).join('');
+}
+
+async function loadExtractedFiles() {
+    try {
+        const res = await fetch('/api/extracted-files', {
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+        });
+        if (!res.ok) return;
+        renderExtractedFiles(await res.json());
+    } catch (err) {
+        console.error('Failed to load extracted files:', err);
+    }
+}
+
+function resetFileSelection() {
+    selectedFile = null;
+    fileName.textContent = '';
+    preview.style.display = 'none';
+    uploadBtn.disabled = true;
+    btnText.textContent = 'Upload & Extract';
+    uploadBtn.querySelector('.spinner-border').style.display = 'none';
+}
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
@@ -77,6 +142,7 @@ function handleFile(file) {
     }
     uploadBtn.disabled = false;
     hideError();
+    success.style.display = 'none';
 }
 
 function showError(msg) { error.textContent = msg; error.style.display = 'block'; }
@@ -87,6 +153,8 @@ uploadBtn.addEventListener('click', async () => {
     uploadBtn.disabled = true;
     btnText.textContent = 'Processing...';
     uploadBtn.querySelector('.spinner-border').style.display = 'inline-block';
+    hideError();
+    success.style.display = 'none';
 
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -98,8 +166,14 @@ uploadBtn.addEventListener('click', async () => {
             body: formData
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Upload failed');
-        window.location.href = `/review/${data.job_id}`;
+        if (!response.ok) {
+            const detail = typeof data.detail === 'string' ? data.detail : 'Upload failed';
+            throw new Error(detail);
+        }
+        success.textContent = 'Invoice processed successfully';
+        success.style.display = 'block';
+        resetFileSelection();
+        loadExtractedFiles();
     } catch (err) {
         showError(err.message);
         uploadBtn.disabled = false;
@@ -107,5 +181,7 @@ uploadBtn.addEventListener('click', async () => {
         uploadBtn.querySelector('.spinner-border').style.display = 'none';
     }
 });
+
+document.addEventListener('DOMContentLoaded', loadExtractedFiles);
 </script>
 {% endblock %}
