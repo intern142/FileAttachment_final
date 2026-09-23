@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from math import ceil
+from PIL import Image
 
 from ..database import get_db
 from ..models import User, Contractor, Source, Invoice, InvoiceStatus
@@ -62,6 +63,16 @@ async def upload_invoice(
     if has_ocr_error(ocr_text):
         raise HTTPException(status_code=422, detail=ocr_text)
     fields = extract_invoice_fields(ocr_text)
+    try:
+        img = Image.open(io.BytesIO(content))
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        jpg_bytes = io.BytesIO()
+        img.save(jpg_bytes, format="JPEG", quality=95)
+        content = jpg_bytes.getvalue()
+        ext = ".jpg"
+    except Exception:
+        pass
     today = date.today()
     saved_path = save_extracted_invoice(
         user_id=current_user.id,
