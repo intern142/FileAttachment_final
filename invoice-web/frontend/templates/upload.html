@@ -5,7 +5,7 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
-        <div class="card">
+        <div class="card" id="uploadCard">
             <div class="card-header">
                 <h4 class="mb-0">Upload Invoice</h4>
             </div>
@@ -32,7 +32,10 @@
                     </button>
                 </div>
                 <div id="error" class="alert alert-danger mt-3" style="display: none;"></div>
-                <div id="success" class="alert alert-success mt-3" style="display: none;"></div>
+                <div id="success" class="alert alert-success mt-3" style="display: none;">
+                    <span id="successMsg"></span>
+                    <button type="button" class="btn btn-sm btn-outline-success ms-3" id="uploadAnotherBtn">Upload another</button>
+                </div>
             </div>
         </div>
 
@@ -59,6 +62,9 @@ const uploadBtn = document.getElementById('uploadBtn');
 const btnText = document.getElementById('btnText');
 const error = document.getElementById('error');
 const success = document.getElementById('success');
+const successMsg = document.getElementById('successMsg');
+const uploadCard = document.getElementById('uploadCard');
+const uploadAnotherBtn = document.getElementById('uploadAnotherBtn');
 const extractedFilesBox = document.getElementById('extractedFiles');
 let selectedFile = null;
 
@@ -170,8 +176,9 @@ uploadBtn.addEventListener('click', async () => {
             const detail = typeof data.detail === 'string' ? data.detail : 'Upload failed';
             throw new Error(detail);
         }
-        success.textContent = 'Invoice processed successfully';
+        successMsg.textContent = 'Invoice processed successfully';
         success.style.display = 'block';
+        uploadCard.style.display = 'none';
         resetFileSelection();
         loadExtractedFiles();
     } catch (err) {
@@ -180,6 +187,12 @@ uploadBtn.addEventListener('click', async () => {
         btnText.textContent = 'Upload & Extract';
         uploadBtn.querySelector('.spinner-border').style.display = 'none';
     }
+});
+
+uploadAnotherBtn.addEventListener('click', () => {
+    uploadCard.style.display = 'block';
+    success.style.display = 'none';
+    successMsg.textContent = '';
 });
 
 document.addEventListener('DOMContentLoaded', loadExtractedFiles);
