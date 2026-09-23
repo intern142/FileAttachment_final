@@ -11,6 +11,20 @@ try:
 except ImportError:
     OCR_AVAILABLE = False
 
+if OCR_AVAILABLE:
+    try:
+        pytesseract.get_tesseract_version()
+    except pytesseract.TesseractNotFoundError:
+        candidates = [
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Tesseract-OCR", "tesseract.exe"),
+            os.path.join(os.environ.get("ProgramFiles", ""), "Tesseract-OCR", "tesseract.exe"),
+            os.path.join(os.environ.get("PROGRAMFILES(X86)", ""), "Tesseract-OCR", "tesseract.exe"),
+        ]
+        for path in candidates:
+            if os.path.isfile(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                break
+
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff")
 SUPPORTED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".pdf", ".bmp", ".tif", ".tiff")
