@@ -5,7 +5,7 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
-        <div class="card">
+        <div class="card" id="uploadCard">
             <div class="card-header">
                 <h4 class="mb-0">Upload Invoice</h4>
             </div>
@@ -32,6 +32,43 @@
                     </button>
                 </div>
                 <div id="error" class="alert alert-danger mt-3" style="display: none;"></div>
+                <div id="success" class="alert alert-success mt-3" style="display: none;">
+                    <span id="successMsg"></span>
+                    <button type="button" class="btn btn-sm btn-outline-success ms-3" id="uploadAnotherBtn">Upload another</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">Extracted Files</h5>
+            </div>
+            <div class="card-body">
+                <form id="renameForm" class="card card-body mb-3 border-primary" style="display: none;">
+                    <h6 class="mb-3">Rename Invoice</h6>
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label" for="renameContractor">Contractor</label>
+                            <input type="text" id="renameContractor" class="form-control form-control-sm" placeholder="Contractor name">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="renamePurchasedFrom">Purchased From</label>
+                            <input type="text" id="renamePurchasedFrom" class="form-control form-control-sm" placeholder="Purchased from">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="renameDate">Date</label>
+                            <input type="date" id="renameDate" class="form-control form-control-sm" readonly>
+                        </div>
+                    </div>
+                    <div id="renameError" class="alert alert-danger mt-3 mb-0" style="display: none;"></div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('renameForm').style.display='none'">Cancel</button>
+                    </div>
+                </form>
+                <div id="extractedFiles">
+                    <p class="text-muted mb-0">No files extracted yet.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -46,7 +83,72 @@ const fileName = document.getElementById('fileName');
 const uploadBtn = document.getElementById('uploadBtn');
 const btnText = document.getElementById('btnText');
 const error = document.getElementById('error');
+const success = document.getElementById('success');
+const successMsg = document.getElementById('successMsg');
+const uploadCard = document.getElementById('uploadCard');
+const uploadAnotherBtn = document.getElementById('uploadAnotherBtn');
+const extractedFilesBox = document.getElementById('extractedFiles');
 let selectedFile = null;
+
+function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+function fileItemHtml(f) {
+    const downloadUrl = '/api/extracted-file?path=' + encodeURIComponent(f.path || '');
+    return `
+    <div class="card mb-2">
+        <div class="card-body py-2 px-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <div class="fw-semibold mb-0">${escapeHtml(f.filename)}</div>
+                <div class="small text-muted">
+                    ${escapeHtml(f.contractor || '')}${f.contractor && f.purchased_from ? ' &rarr; ' : ''}${escapeHtml(f.purchased_from || '')}${f.date ? ' &middot; ' + escapeHtml(f.date) : ''}
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <a class="btn btn-sm btn-outline-primary" href="${downloadUrl}">Download</a>
+                <button class="btn btn-sm btn-outline-secondary rename-file-btn" data-invoice-id="${f.invoice_id ?? ''}" data-path="${escapeHtml(f.path || '')}" data-contractor="${escapeHtml(f.contractor || '')}" data-purchased-from="${escapeHtml(f.purchased_from || '')}" data-date="${escapeHtml(f.date || '')}" title="Rename invoice file">Rename</button>
+                <button class="btn btn-sm btn-outline-danger delete-file-btn" data-invoice-id="${f.invoice_id ?? ''}" data-path="${escapeHtml(f.path || '')}" title="Delete invoice file">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                        <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3V2h11v1z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderExtractedFiles(files) {
+    if (!files || !files.length) {
+        extractedFilesBox.innerHTML = '<p class="text-muted mb-0">No files extracted yet.</p>';
+        return;
+    }
+    extractedFilesBox.innerHTML = files.map(fileItemHtml).join('');
+}
+
+async function loadExtractedFiles() {
+    try {
+        const res = await fetch('/api/extracted-files', {
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+        });
+        if (!res.ok) return;
+        renderExtractedFiles(await res.json());
+    } catch (err) {
+        console.error('Failed to load extracted files:', err);
+    }
+}
+
+function resetFileSelection() {
+    selectedFile = null;
+    fileName.textContent = '';
+    preview.style.display = 'none';
+    uploadBtn.disabled = true;
+    btnText.textContent = 'Upload & Extract';
+    uploadBtn.querySelector('.spinner-border').style.display = 'none';
+}
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
@@ -77,6 +179,7 @@ function handleFile(file) {
     }
     uploadBtn.disabled = false;
     hideError();
+    success.style.display = 'none';
 }
 
 function showError(msg) { error.textContent = msg; error.style.display = 'block'; }
@@ -87,6 +190,8 @@ uploadBtn.addEventListener('click', async () => {
     uploadBtn.disabled = true;
     btnText.textContent = 'Processing...';
     uploadBtn.querySelector('.spinner-border').style.display = 'inline-block';
+    hideError();
+    success.style.display = 'none';
 
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -98,13 +203,140 @@ uploadBtn.addEventListener('click', async () => {
             body: formData
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Upload failed');
-        window.location.href = `/review/${data.job_id}`;
+        if (!response.ok) {
+            const detail = typeof data.detail === 'string' ? data.detail : 'Upload failed';
+            throw new Error(detail);
+        }
+        successMsg.textContent = 'Invoice processed successfully';
+        success.style.display = 'block';
+        uploadCard.style.display = 'none';
+        resetFileSelection();
+        loadExtractedFiles();
     } catch (err) {
         showError(err.message);
         uploadBtn.disabled = false;
         btnText.textContent = 'Upload & Extract';
         uploadBtn.querySelector('.spinner-border').style.display = 'none';
+    }
+});
+
+uploadAnotherBtn.addEventListener('click', () => {
+    uploadCard.style.display = 'block';
+    success.style.display = 'none';
+    successMsg.textContent = '';
+});
+
+document.addEventListener('DOMContentLoaded', loadExtractedFiles);
+
+// Rename file functionality
+const renameForm = document.getElementById('renameForm');
+const renameError = document.getElementById('renameError');
+const renameFields = {
+    contractor: document.getElementById('renameContractor'),
+    purchasedFrom: document.getElementById('renamePurchasedFrom'),
+    date: document.getElementById('renameDate'),
+};
+let renameInvoiceId = null;
+
+async function openRenameForm(button) {
+    renameInvoiceId = button.getAttribute('data-invoice-id');
+    if (!renameInvoiceId) {
+        showRenameError('This file has no invoice record. Please upload a new file.');
+        return;
+    }
+    renameFields.contractor.value = button.getAttribute('data-contractor') || '';
+    renameFields.purchasedFrom.value = button.getAttribute('data-purchased-from') || '';
+    renameFields.date.value = button.getAttribute('data-date') || '';
+    hideRenameError();
+    renameForm.style.display = 'block';
+    const fileInput2 = document.getElementById('fileInput');
+    if (fileInput2 && typeof fileInput2.scrollIntoView === 'function') {
+        renameForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function showRenameError(msg) { renameError.textContent = msg; renameError.style.display = 'block'; }
+function hideRenameError() { renameError.style.display = 'none'; }
+
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('rename-file-btn')) {
+        openRenameForm(e.target);
+    }
+    const deleteBtn = e.target.closest('.delete-file-btn');
+    if (deleteBtn) {
+        deleteExtractedFile(deleteBtn);
+    }
+});
+
+async function deleteExtractedFile(button) {
+    const filename = button.getAttribute('data-path') ? button.getAttribute('data-path').split(/[\\/]/).pop() : '';
+    if (!confirm('Delete this extracted file' + (filename ? ': ' + filename : '') + '?')) return;
+    const invoiceId = button.getAttribute('data-invoice-id');
+    const path = button.getAttribute('data-path') || '';
+    const params = new URLSearchParams();
+    if (invoiceId) {
+        params.set('invoice_id', invoiceId);
+    } else if (path) {
+        params.set('path', path);
+    }
+    button.disabled = true;
+    try {
+        const response = await fetch('/api/extracted-file?' + params.toString(), {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+        });
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            const detail = typeof data.detail === 'string' ? data.detail : 'Delete failed';
+            throw new Error(detail);
+        }
+        loadExtractedFiles();
+    } catch (err) {
+        alert('Delete failed: ' + err.message);
+        button.disabled = false;
+    }
+}
+
+renameForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const contractor = renameFields.contractor.value.trim();
+    const purchasedFrom = renameFields.purchasedFrom.value.trim();
+    if (!contractor && !purchasedFrom) {
+        showRenameError('Contractor and Purchased From cannot both be empty.');
+        return;
+    }
+    const saveBtn = renameForm.querySelector('button[type="submit"]');
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = 'Saving...';
+    saveBtn.disabled = true;
+    hideRenameError();
+    try {
+        const response = await fetch('/api/rename-file', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + localStorage.getItem('access_token'),
+            },
+            body: JSON.stringify({
+                invoice_id: parseInt(renameInvoiceId, 10),
+                contractor,
+                purchased_from: purchasedFrom,
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            const detail = typeof data.detail === 'string' ? data.detail : 'Rename failed';
+            throw new Error(detail);
+        }
+        renameForm.style.display = 'none';
+        renderExtractedFiles(await (await fetch('/api/extracted-files', {
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+        })).json());
+    } catch (err) {
+        showRenameError(err.message);
+    } finally {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
     }
 });
 </script>

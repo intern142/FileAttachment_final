@@ -42,7 +42,8 @@ document.getElementById('loginForm').addEventListener('htmx:afterRequest', funct
     document.getElementById('loginBtn').disabled = false;
     document.getElementById('loginBtn').querySelector('.spinner-border').style.display = 'none';
     if (evt.detail.successful) {
-        const resp = evt.detail.xhr.response;
+        let resp = evt.detail.xhr.response;
+        try { resp = JSON.parse(resp); } catch (e) { resp = null; }
         if (resp && resp.access_token) {
             localStorage.setItem('access_token', resp.access_token);
             window.location.href = '/';

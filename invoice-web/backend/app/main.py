@@ -7,13 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .database import init_db, engine
-from .models import Base, Contractor, Source
+from .models import Base, Contractor, Source, User
 from .api import auth, routes
 from .core.config import get_settings
-from .api.auth import get_current_user
+from .api.auth import get_current_user, get_current_user_optional
 from sqlalchemy.orm import Session
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.getcwd()
 
 settings = get_settings()
 
@@ -62,7 +62,9 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "s
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request, current_user = Depends(get_current_user)):
+async def root(request: Request, current_user: User = Depends(get_current_user_optional)):
+    if not current_user:
+        return RedirectResponse(url="/login")
     return templates.TemplateResponse("upload.html", {"request": request})
 
 

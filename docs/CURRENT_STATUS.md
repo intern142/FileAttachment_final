@@ -1,39 +1,49 @@
-# Current Project Status
+# Current Status
 
-## What Was Completed (Member A)
+## What Was Completed
+- **JPG Conversion on Upload**: Images (PNG, etc.) now automatically converted to JPG before saving (commit 75bdace, 3e52059)
+- **File Visibility in App**: Uploaded files now display correctly in the web UI with "Upload another" button (commit 3e52059)
+- **Tesseract Auto-Detection**: Windows local dev now auto-detects Tesseract OCR path (commit 8c644d4)
+- **Auto-Extraction**: Contractor and purchased-from fields extracted on upload, saved as `CONTRACTOR--PURCHASED_FROM--DATE` filename (commit 5acddb8)
+- **Auth Fixes**: Cookie-based auth for page navigation, redirects for anonymous users, bcrypt compatibility (commits 3804aca, b899e81, 24b32fd, 58dc9ea)
+- **Upload Flow Fixes**: Confirm redirect to `/` (upload page), review form posts to `/confirm`, HTMX 303 redirects (commits 85c8412, 3b96373, 10e3041, 565808f)
 
-**Infrastructure & Core**
-- Docker Compose setup (PostgreSQL + Backend)
-- Backend Dockerfile with Tesseract, Poppler, build tools
-- Requirements: FastAPI, SQLAlchemy 2.0, Pydantic, JWT auth, OCR deps
+## What Remains
+### General Remaining Items
+- Database migrations for production (currently using SQLite dev DB)
+- Production deployment config (Docker, environment variables)
+- Comprehensive test coverage (unit + integration)
+- Error handling for OCR failures / invalid uploads
+- Rate limiting / upload size limits
+- Multi-user isolation testing
 
-**Backend Core**
-- `config.py` - Settings from env (DATABASE_URL, STORAGE_PATH, SECRET_KEY)
-- `security.py` - JWT HS256, bcrypt password hashing, token create/verify
-- `models.py` - User, Contractor, Source, Invoice, AuditLog with indexes
-- `schemas.py` - Pydantic models for all endpoints
-- `database.py` - SQLAlchemy session dependency
-- `main.py` - FastAPI with lifespan seeding contractors/sources
+## Files Changed (Recent)
+- `invoice-web/frontend/templates/upload.html` - Added "Upload another" button, hide/show upload card after success
+- `invoice-web/backend/app/api/routes.py` - Added PIL-based JPG conversion on upload
+- `invoice-web/backend/app/__init__.py` - Added missing package init
+- `invoice-web/backend/app/database/__init__.py` - Added missing package init
 
-**Auth API**
-- `auth.py` - POST /auth/register, POST /auth/login, get_current_user dependency
+## Bugs Discovered
+- None critical in recent commits. Previous bcrypt 4.0.1 compatibility issue fixed (commit 24b32fd)
+- Server logs show clean startup (server_err.log: only INFO messages)
 
-**OCR Service**
-- `ocr.py` - extract_text() for JPG/PNG/PDF via pytesseract + pdf2image
-- parse_ocr_text() - basic field extraction (contractor, source, date, amount)
+## Decisions Made
+- Use PIL/Pillow for image conversion (JPG output, quality=95, RGB conversion for RGBA/P/LA modes)
+- Store extracted files in organized directory: `storage/{user_id}/Q{quarter}/{month}/Week_{week}/`
+- Filename format: `CONTRACTOR--PURCHASED_FROM--DATE.jpg` (spaces preserved, special chars handled)
+- Auth via HttpOnly cookie + Authorization header support for HTMX navigation
+- Redirect to `/` (upload page) after confirm instead of invoices list
 
-**Upload Flow**
-- POST /api/upload - saves temp file, runs OCR sync, returns job_id + parsed data
-- GET /review/{job_id} - renders review template with image preview + editable fields
+## Next Recommended Steps
+1. Add pytest test suite (backend API + frontend HTMX interactions)
+2. Create Dockerfile + docker-compose for production
+3. Add environment-based config (SECRET_KEY, DB_URL, TESSERACT_PATH)
+4. Implement upload validation (file type, size limit, rate limiting)
+5. Add database migration tool (Alembic) for schema changes
+6. Consider async OCR processing for large files
 
-**Frontend Templates**
-- base.html - shared layout with HTMX + Tailwind CDN
-- upload.html - drag/drop dropzone, HTMX post to /api/upload
-- review.html - image preview + editable form (contractor, source, date, amount) posting to /api/confirm
-- login.html, register.html - HTMX auth forms
-
-## What Remains (Member B Scope)
-
+## Member B Tasks (from file_copy)
+### What Remains (Member B Scope)
 - `organize.py` - generate_path(), move_file(), save_db()
 - POST /api/confirm - parse date, generate path, move to storage, save Invoice row
 - GET /invoices - list with filters (date, contractor, source), pagination
@@ -42,8 +52,7 @@
 - list.html template
 - Wire review.html confirm button (already exists, posts to /api/confirm)
 
-## Files Changed (Member A)
-
+### Files Changed (Member A)
 ```
 docker-compose.yml
 backend/Dockerfile
@@ -68,8 +77,7 @@ frontend/templates/login.html
 frontend/templates/register.html
 ```
 
-## Bugs Discovered & Fixed
-
+### Bugs Discovered & Fixed (Member A)
 1. **psycopg2-binary build failure** - Missing libpq-dev + gcc in Dockerfile → added
 2. **pydantic_settings missing** - Added to requirements.txt
 3. **email-validator missing** - Required for EmailStr, added to requirements.txt
@@ -81,8 +89,7 @@ frontend/templates/register.html
 9. **401 on protected routes despite valid token** - `get_current_user` parsed the JWT payload (which carries `sub`) into `TokenData(user_id=...)`, always yielding `None` → 401 "Could not validate credentials". Fixed in `auth.py` by reading `sub` directly and converting to int.
 10. **bcrypt 5.0.0 still active in running container** - Despite requirements.txt pinning, the image pip layer was cached. Fixed by `pip install --force-reinstall bcrypt==4.0.1 passlib==1.7.4` inside the container + restart; verified `bcrypt 4.0.1` / `passlib 1.7.4`.
 
-## E2E Verification (Member A flow, done locally)
-
+### E2E Verification (Member A flow, done locally)
 - `POST /auth/register` (JSON) → 200, returns `access_token`
 - `POST /auth/login` (form-urlencoded) → 200, returns `access_token`
 - `POST /api/upload` (Bearer + multipart file `storage/temp/test_invoice.png`) → 200, `job_id` + OCR text + parsed contractor/source/date/amount + contractor/source dropdown options
@@ -91,8 +98,7 @@ frontend/templates/register.html
 
 Note: OCR `amount` prefill comes back as raw line `Amount: 1250.00 USD` (not stripped to number) - cosmetic, backend.net parsing is enough to display; confirm endpoint can clean it.
 
-## Decisions Made
-
+### Decisions Made (Member A)
 - Sync OCR (no queue) - simpler for 3-hour scope
 - Server-rendered HTMX/Jinja2 - no frontend build step
 - Local ./storage bind-mounted in Docker
@@ -100,8 +106,7 @@ Note: OCR `amount` prefill comes back as raw line `Amount: 1250.00 USD` (not str
 - Contractors/Sources seeded on startup (3 each)
 - Temp files in /storage/temp/ served via StaticFiles at /temp/
 
-## Next Recommended Steps
-
+### Next Recommended Steps (Member B)
 1. **Member B** pulls Member_A branch, copies 3 shared files (models.py, schemas.py, auth.py)
 2. Member B implements:
    - `backend/app/services/organize.py`
