@@ -110,6 +110,12 @@ function fileItemHtml(f) {
             <div class="d-flex gap-2">
                 <a class="btn btn-sm btn-outline-primary" href="${downloadUrl}">Download</a>
                 <button class="btn btn-sm btn-outline-secondary rename-file-btn" data-invoice-id="${f.invoice_id ?? ''}" data-path="${escapeHtml(f.path || '')}" data-contractor="${escapeHtml(f.contractor || '')}" data-purchased-from="${escapeHtml(f.purchased_from || '')}" data-date="${escapeHtml(f.date || '')}" title="Rename invoice file">Rename</button>
+                <button class="btn btn-sm btn-outline-danger delete-file-btn" data-invoice-id="${f.invoice_id ?? ''}" data-path="${escapeHtml(f.path || '')}" title="Delete invoice file">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                        <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3V2h11v1z"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>`;
@@ -256,7 +262,40 @@ document.addEventListener('click', (e) => {
     if (e.target.classList.contains('rename-file-btn')) {
         openRenameForm(e.target);
     }
+    const deleteBtn = e.target.closest('.delete-file-btn');
+    if (deleteBtn) {
+        deleteExtractedFile(deleteBtn);
+    }
 });
+
+async function deleteExtractedFile(button) {
+    const filename = button.getAttribute('data-path') ? button.getAttribute('data-path').split(/[\\/]/).pop() : '';
+    if (!confirm('Delete this extracted file' + (filename ? ': ' + filename : '') + '?')) return;
+    const invoiceId = button.getAttribute('data-invoice-id');
+    const path = button.getAttribute('data-path') || '';
+    const params = new URLSearchParams();
+    if (invoiceId) {
+        params.set('invoice_id', invoiceId);
+    } else if (path) {
+        params.set('path', path);
+    }
+    button.disabled = true;
+    try {
+        const response = await fetch('/api/extracted-file?' + params.toString(), {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+        });
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            const detail = typeof data.detail === 'string' ? data.detail : 'Delete failed';
+            throw new Error(detail);
+        }
+        loadExtractedFiles();
+    } catch (err) {
+        alert('Delete failed: ' + err.message);
+        button.disabled = false;
+    }
+}
 
 renameForm.addEventListener('submit', async (e) => {
     e.preventDefault();

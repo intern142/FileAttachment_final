@@ -241,6 +241,51 @@ def sanitize_value(value: str) -> str:
     return (value or "").strip()
 
 
+@router.delete("/api/extracted-file")
+def delete_extracted_file(
+    invoice_id: Optional[int] = Query(None),
+    path: str = Query(default=""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    full = None
+    if invoice_id is not None:
+        invoice = db.query(Invoice).filter(
+            Invoice.id == invoice_id,
+            Invoice.user_id == current_user.id,
+        ).first()
+        if not invoice:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        full = invoice.file_path
+    else:
+        storage_root = os.path.realpath(settings.storage_path)
+        user_root = os.path.realpath(os.path.join(storage_root, str(current_user.id)))
+        full = os.path.realpath(os.path.join(storage_root, path))
+        if not full.startswith(user_root + os.sep):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        invoice = db.query(Invoice).filter(
+            Invoice.user_id == current_user.id,
+            Invoice.file_path.isnot(None),
+        ).all()
+        for inv in invoice:
+            if os.path.realpath(inv.file_path) == full:
+                invoice = inv
+                break
+        else:
+            invoice = None
+
+    if not full or not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        os.remove(full)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {e}")
+    if invoice is not None:
+        db.delete(invoice)
+        db.commit()
+    return {"deleted": True, "filename": os.path.basename(full)}
+
+
 @router.post("/confirm")
 async def confirm_invoice(
     request: Request,
