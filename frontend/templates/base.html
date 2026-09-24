@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Invoice OCR{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-white shadow-sm border-b border-gray-200">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <a href="/upload" class="text-xl font-bold text-blue-600">Invoice OCR</a>
+            <div class="flex items-center space-x-4">
+                {% if user %}
+                    <span class="text-sm text-gray-600">{{ user.email }}</span>
+                    <a href="/invoices" class="text-sm text-blue-600 hover:text-blue-800">View Invoices</a>
+                    <form action="/auth/logout" method="post" class="inline">
+                        <button type="submit" class="text-sm text-gray-600 hover:text-gray-800">Logout</button>
+                    </form>
+                {% else %}
+                    <a href="/login" class="text-sm text-blue-600 hover:text-blue-800">Login</a>
+                    <a href="/register" class="text-sm text-blue-600 hover:text-blue-800">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="bg-white border-t border-gray-200 py-4 mt-auto">
+        <div class="container mx-auto px-4 text-center text-sm text-gray-500">
+            Invoice OCR System
+        </div>
+    </footer>
+</body>
+</html>
