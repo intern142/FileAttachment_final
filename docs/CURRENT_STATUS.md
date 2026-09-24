@@ -32,9 +32,25 @@
 - review.html - image preview + editable form (contractor, source, date, amount) posting to /api/confirm
 - login.html, register.html - HTMX auth forms
 
-## What Remains (Member B Scope)
+## What Was Completed (Member B - feature1 branch)
 
-- `organize.py` - generate_path(), move_file(), save_db()
+**Enhanced Upload Flow**
+- Modified POST /api/upload to:
+  - Extract contractor name and purchased from (source) from OCR
+  - Use today's actual date instead of extracted date from document
+  - Generate smart filename format: {contractor_name}_{purchased_from}_{YYYYMMDD}.{extension}
+  - Save file with new name immediately in temp storage
+  - Return minimal JSON response WITHOUT raw OCR text or parsed data (hides extraction from user)
+  - Maintain compatibility with review endpoint for workflow continuity
+
+**Verification**
+- Tested feature through API calls with authentication
+- Confirmed raw OCR data is not exposed in API responses
+- Verified filename generation works correctly with real invoice files
+- Application runs successfully on http://localhost:8001 using docker-compose-test.yml
+
+## What Remains
+
 - POST /api/confirm - parse date, generate path, move to storage, save Invoice row
 - GET /invoices - list with filters (date, contractor, source), pagination
 - Download endpoints
@@ -42,8 +58,13 @@
 - list.html template
 - Wire review.html confirm button (already exists, posts to /api/confirm)
 
-## Files Changed (Member A)
+## Files Changed (Member B - feature1 branch)
 
+```
+backend/app/api/routes.py
+```
+
+## Files Changed (Member A)
 ```
 docker-compose.yml
 backend/Dockerfile
@@ -99,15 +120,21 @@ Note: OCR `amount` prefill comes back as raw line `Amount: 1250.00 USD` (not str
 - JWT HS256 with 30-min expiry
 - Contractors/Sources seeded on startup (3 each)
 - Temp files in /storage/temp/ served via StaticFiles at /temp/
+- **Member B decision**: Hide raw OCR data from users while extracting needed fields for smart filenames
+- **Member B decision**: Use today's actual date instead of extracted date for filename consistency
+- **Member B decision**: Smart filename format: {contractor}_{purchasedfrom}_{YYYYMMDD}.{extension}
 
 ## Next Recommended Steps
 
-1. **Member B** pulls Member_A branch, copies 3 shared files (models.py, schemas.py, auth.py)
-2. Member B implements:
-   - `backend/app/services/organize.py`
-   - POST /api/confirm in routes.py
-   - GET /invoices in routes.py
-   - AuditLog writes
-   - list.html template
-3. Test full flow: Upload → OCR → Review → Confirm → List/Download
-4. Verify folder structure: /storage/{user}/{quarter}/{month}/Week_{n}/{contractor_short}-{source_short}-{YYYYMMDD}.ext
+1. **Member B** to complete remaining endpoints:
+   - POST /api/confirm - implement file organization and database storage
+   - GET /invoices - implement listing with filters and pagination
+   - Add download endpoints
+   - Complete AuditLog integration
+   - Create list.html template
+
+2. Test full flow: Upload → OCR → Review → Confirm → List/Download
+
+3. Verify folder structure: /storage/{user}/{quarter}/{month}/Week_{n}/{contractor_short}-{source_short}-{YYYYMMDD}.ext
+
+4. Merge feature1 branch into main after completion
