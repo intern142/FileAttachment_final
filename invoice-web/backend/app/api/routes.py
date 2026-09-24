@@ -18,9 +18,15 @@ from PIL import Image
 from ..database import get_db
 from ..models import User, Contractor, Source, Invoice, InvoiceStatus
 from ..schemas import (
-    InvoiceOut, InvoiceListParams, ConfirmRequest, ContractorOut, SourceOut, OCRResult, ExtractResult
+    InvoiceOut, InvoiceListParams, ConfirmRequest, ContractorOut, SourceOut, OCRResult,
+    ExtractResult, RenameRequest, RenameResult,
 )
-from ..services.organize import process_confirm, save_extracted_invoice
+from ..services.organize import (
+    process_confirm,
+    save_extracted_invoice,
+    record_extracted_invoice,
+    rename_extracted_invoice_file,
+)
 from ..services.extraction import (
     extract_text_from_file,
     extract_invoice_fields,
@@ -54,6 +60,7 @@ def normalize_extension(filename: str) -> str:
 async def upload_invoice(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     content = await file.read()
     if not content:
@@ -82,11 +89,20 @@ async def upload_invoice(
         extension=ext,
         content=content,
     )
+    invoice = record_extracted_invoice(
+        db=db,
+        user_id=current_user.id,
+        contractor=fields["contractor"],
+        invoice_date=today,
+        file_path=saved_path,
+        ocr_json=ocr_text,
+    )
     return ExtractResult(
         contractor=fields["contractor"],
         purchased_from=fields["purchased_from"],
         date=today.strftime("%Y-%m-%d"),
         filename=os.path.basename(saved_path),
+        invoice_id=invoice.id,
         saved=True,
     )
 
@@ -140,9 +156,16 @@ def _parse_extracted_filename(filename: str) -> dict:
 
 
 @router.get("/api/extracted-files")
-def list_extracted_files(current_user: User = Depends(get_current_user)):
+def list_extracted_files(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     root = os.path.join(settings.storage_path, str(current_user.id))
     results = []
+    invoice_by_path = {}
+    for inv in db.query(Invoice).filter(Invoice.user_id == current_user.id).all():
+        if inv.file_path:
+            invoice_by_path[os.path.realpath(inv.file_path)] = inv.id
     if os.path.isdir(root):
         for dirpath, _, filenames in os.walk(root):
             for name in filenames:
@@ -154,6 +177,7 @@ def list_extracted_files(current_user: User = Depends(get_current_user)):
                     "filename": name,
                     "path": os.path.relpath(full, settings.storage_path),
                     "saved_at": datetime.fromtimestamp(os.path.getmtime(full)).isoformat(),
+                    "invoice_id": invoice_by_path.get(os.path.realpath(full)),
                     **parsed,
                 })
     results.sort(key=lambda r: r["saved_at"], reverse=True)
@@ -173,6 +197,48 @@ def download_extracted_file(
     if not os.path.isfile(full):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(full, filename=os.path.basename(full))
+
+
+@router.post("/api/rename-file", response_model=RenameResult)
+def rename_file(
+    payload: RenameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    invoice = db.query(Invoice).filter(
+        Invoice.id == payload.invoice_id,
+        Invoice.user_id == current_user.id,
+    ).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    new_contractor = sanitize_value(payload.contractor) or "UNKNOWN"
+    new_purchased = sanitize_value(payload.purchased_from) or "UNKNOWN"
+
+    try:
+        new_path = rename_extracted_invoice_file(
+            db=db,
+            invoice=invoice,
+            new_contractor=new_contractor,
+            new_purchased_from=new_purchased,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to rename file: {e}")
+
+    rel_path = os.path.relpath(new_path, settings.storage_path)
+    return RenameResult(
+        invoice_id=invoice.id,
+        filename=os.path.basename(new_path),
+        path=rel_path,
+        url=f"/api/extracted-file?path={rel_path}",
+        saved=True,
+    )
+
+
+def sanitize_value(value: str) -> str:
+    return (value or "").strip()
 
 
 @router.post("/confirm")

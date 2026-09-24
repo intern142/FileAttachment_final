@@ -44,6 +44,28 @@
                 <h5 class="mb-0">Extracted Files</h5>
             </div>
             <div class="card-body">
+                <form id="renameForm" class="card card-body mb-3 border-primary" style="display: none;">
+                    <h6 class="mb-3">Rename Invoice</h6>
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label" for="renameContractor">Contractor</label>
+                            <input type="text" id="renameContractor" class="form-control form-control-sm" placeholder="Contractor name">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="renamePurchasedFrom">Purchased From</label>
+                            <input type="text" id="renamePurchasedFrom" class="form-control form-control-sm" placeholder="Purchased from">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="renameDate">Date</label>
+                            <input type="date" id="renameDate" class="form-control form-control-sm" readonly>
+                        </div>
+                    </div>
+                    <div id="renameError" class="alert alert-danger mt-3 mb-0" style="display: none;"></div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('renameForm').style.display='none'">Cancel</button>
+                    </div>
+                </form>
                 <div id="extractedFiles">
                     <p class="text-muted mb-0">No files extracted yet.</p>
                 </div>
@@ -85,7 +107,10 @@ function fileItemHtml(f) {
                     ${escapeHtml(f.contractor || '')}${f.contractor && f.purchased_from ? ' &rarr; ' : ''}${escapeHtml(f.purchased_from || '')}${f.date ? ' &middot; ' + escapeHtml(f.date) : ''}
                 </div>
             </div>
-            <a class="btn btn-sm btn-outline-primary" href="${downloadUrl}">Download</a>
+            <div class="d-flex gap-2">
+                <a class="btn btn-sm btn-outline-primary" href="${downloadUrl}">Download</a>
+                <button class="btn btn-sm btn-outline-secondary rename-file-btn" data-invoice-id="${f.invoice_id ?? ''}" data-path="${escapeHtml(f.path || '')}" data-contractor="${escapeHtml(f.contractor || '')}" data-purchased-from="${escapeHtml(f.purchased_from || '')}" data-date="${escapeHtml(f.date || '')}" title="Rename invoice file">Rename</button>
+            </div>
         </div>
     </div>`;
 }
@@ -196,5 +221,84 @@ uploadAnotherBtn.addEventListener('click', () => {
 });
 
 document.addEventListener('DOMContentLoaded', loadExtractedFiles);
+
+// Rename file functionality
+const renameForm = document.getElementById('renameForm');
+const renameError = document.getElementById('renameError');
+const renameFields = {
+    contractor: document.getElementById('renameContractor'),
+    purchasedFrom: document.getElementById('renamePurchasedFrom'),
+    date: document.getElementById('renameDate'),
+};
+let renameInvoiceId = null;
+
+async function openRenameForm(button) {
+    renameInvoiceId = button.getAttribute('data-invoice-id');
+    if (!renameInvoiceId) {
+        showRenameError('This file has no invoice record. Please upload a new file.');
+        return;
+    }
+    renameFields.contractor.value = button.getAttribute('data-contractor') || '';
+    renameFields.purchasedFrom.value = button.getAttribute('data-purchased-from') || '';
+    renameFields.date.value = button.getAttribute('data-date') || '';
+    hideRenameError();
+    renameForm.style.display = 'block';
+    const fileInput2 = document.getElementById('fileInput');
+    if (fileInput2 && typeof fileInput2.scrollIntoView === 'function') {
+        renameForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function showRenameError(msg) { renameError.textContent = msg; renameError.style.display = 'block'; }
+function hideRenameError() { renameError.style.display = 'none'; }
+
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('rename-file-btn')) {
+        openRenameForm(e.target);
+    }
+});
+
+renameForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const contractor = renameFields.contractor.value.trim();
+    const purchasedFrom = renameFields.purchasedFrom.value.trim();
+    if (!contractor && !purchasedFrom) {
+        showRenameError('Contractor and Purchased From cannot both be empty.');
+        return;
+    }
+    const saveBtn = renameForm.querySelector('button[type="submit"]');
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = 'Saving...';
+    saveBtn.disabled = true;
+    hideRenameError();
+    try {
+        const response = await fetch('/api/rename-file', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + localStorage.getItem('access_token'),
+            },
+            body: JSON.stringify({
+                invoice_id: parseInt(renameInvoiceId, 10),
+                contractor,
+                purchased_from: purchasedFrom,
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            const detail = typeof data.detail === 'string' ? data.detail : 'Rename failed';
+            throw new Error(detail);
+        }
+        renameForm.style.display = 'none';
+        renderExtractedFiles(await (await fetch('/api/extracted-files', {
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+        })).json());
+    } catch (err) {
+        showRenameError(err.message);
+    } finally {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
+    }
+});
 </script>
 {% endblock %}

@@ -2,10 +2,11 @@ import os
 import re
 import shutil
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from sqlalchemy.orm import Session
 
-from ..models import Invoice, InvoiceStatus, AuditLog
+from ..models import Invoice, InvoiceStatus, AuditLog, Contractor, Source
 from ..schemas import ConfirmRequest
 from ..core.config import get_settings
 
@@ -107,6 +108,87 @@ def save_extracted_invoice(
     with open(final_path, "wb") as f:
         f.write(content)
     return final_path
+
+
+def get_or_create_contractor(db: Session, name: str) -> Contractor:
+    """Match an existing contractor by name (case-insensitive) or create one."""
+    clean = sanitize_filename_part(name)
+    existing = db.query(Contractor).filter(
+        Contractor.name.ilike(clean) if clean != "UNKNOWN" else Contractor.name == "UNKNOWN"
+    ).first()
+    if existing:
+        return existing
+    short = "".join(re.findall(r"[A-Za-z0-9]+", clean)).upper()[:10] or "UNKNOWN"
+    contractor = Contractor(name=clean, short_code=short)
+    db.add(contractor)
+    db.commit()
+    db.refresh(contractor)
+    return contractor
+
+
+def get_default_source(db: Session) -> Source:
+    source = db.query(Source).filter(Source.short_code == "WA").first()
+    if source:
+        return source
+    return db.query(Source).first()
+
+
+def record_extracted_invoice(
+    db: Session,
+    user_id: int,
+    contractor: str,
+    invoice_date: datetime,
+    file_path: str,
+    ocr_json: str = None,
+) -> Invoice:
+    """Create an Invoice row so the extracted file has a stable invoice_id."""
+    contractor_obj = get_or_create_contractor(db, contractor)
+    source_obj = get_default_source(db)
+    invoice = Invoice(
+        user_id=user_id,
+        contractor_id=contractor_obj.id,
+        source_id=source_obj.id,
+        date=invoice_date,
+        amount=Decimal("0"),
+        file_path=file_path,
+        ocr_json=ocr_json,
+        status=InvoiceStatus.pending,
+    )
+    db.add(invoice)
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+
+def rename_extracted_invoice_file(
+    db: Session,
+    invoice: Invoice,
+    new_contractor: str,
+    new_purchased_from: str,
+) -> str:
+    """Rename the stored file on disk to CONTRACTOR--PURCHASED_FROM--DATE.ext and update metadata."""
+    old_path = invoice.file_path
+    if not os.path.exists(old_path):
+        raise FileNotFoundError(f"File not found on disk: {old_path}")
+
+    ext = os.path.splitext(old_path)[1] or ".jpg"
+    directory = os.path.dirname(old_path)
+    new_dest = os.path.join(
+        directory,
+        build_invoice_filename(new_contractor, new_purchased_from, invoice.date),
+    )
+    new_path = f"{new_dest}{ext}"
+    counter = 1
+    while os.path.exists(new_path) and os.path.realpath(new_path) != os.path.realpath(old_path):
+        new_path = f"{new_dest}_{counter}{ext}"
+        counter += 1
+
+    os.rename(old_path, new_path)
+
+    invoice.file_path = new_path
+    db.commit()
+    db.refresh(invoice)
+    return new_path
 
 
 def save_invoice(

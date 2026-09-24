@@ -108,6 +108,21 @@ class ExtractResult(BaseModel):
     purchased_from: str
     date: str
     filename: str
+    invoice_id: int
+    saved: bool = True
+
+
+class RenameRequest(BaseModel):
+    invoice_id: int
+    contractor: str
+    purchased_from: str
+
+
+class RenameResult(BaseModel):
+    invoice_id: int
+    filename: str
+    path: str
+    url: str
     saved: bool = True
 
 
