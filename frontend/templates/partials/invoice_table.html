@@ -1,0 +1,116 @@
+<div class="bg-white rounded-lg shadow-md overflow-hidden">
+    {% if invoices %}
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead class="bg-gray-50 border-b border-gray-200">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contractor</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {% for inv in invoices %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-sm text-gray-900">{{ inv.date.strftime('%Y-%m-%d') }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">{{ inv.contractor_name }} ({{ inv.contractor_short }})</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">{{ inv.source_name }} ({{ inv.source_short }})</td>
+                    <td class="px-4 py-3 text-sm text-gray-900 font-medium">${{ "%.2f"|format(inv.amount) }}</td>
+                    <td class="px-4 py-3">
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full {% if inv.status == 'confirmed' %}bg-green-100 text-green-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                            {{ inv.status }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm">
+                        <div class="flex items-center space-x-2">
+                            <a href="/api/invoice-file/{{ inv.id }}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">Download</a>
+                            <button 
+                                class="copy-file-btn text-green-600 hover:text-green-800 text-sm font-medium cursor-pointer"
+                                data-file-path="{{ inv.file_path }}"
+                                data-filename="{{ inv.file_path.split('/')[-1] }}"
+                                title="Copy file to clipboard"
+                            >
+                                Copy File
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="flex justify-center items-center space-x-2 mt-4">
+        {% if page > 1 %}
+        <a href="/invoices?page={{ page - 1 }}&contractor_id={{ selected_contractor or '' }}&source_id={{ selected_source or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}" 
+           class="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-50" hx-get="/invoices?page={{ page - 1 }}&contractor_id={{ selected_contractor or '' }}&source_id={{ selected_source or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}" hx-target="#invoices-table" hx-push-url="true">
+            Previous
+        </a>
+        {% endif %}
+        
+        <span class="px-3 py-1 text-sm text-gray-600">Page {{ page }} of {{ total_pages }}</span>
+        
+        {% if page < total_pages %}
+        <a href="/invoices?page={{ page + 1 }}&contractor_id={{ selected_contractor or '' }}&source_id={{ selected_source or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}" 
+           class="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-50" hx-get="/invoices?page={{ page + 1 }}&contractor_id={{ selected_contractor or '' }}&source_id={{ selected_source or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}" hx-target="#invoices-table" hx-push-url="true">
+            Next
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="text-center py-12 text-gray-500">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <p class="mt-2 text-lg">No invoices found</p>
+        <p class="text-sm">Upload your first invoice to get started</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('copy-file-btn')) {
+        const button = e.target;
+        const filePath = button.getAttribute('data-file-path');
+        const filename = button.getAttribute('data-filename');
+        
+        const originalText = button.textContent;
+        button.textContent = 'Copying...';
+        button.disabled = true;
+        
+        try {
+            const response = await fetch('/api/invoice-file/' + button.closest('tr').querySelector('a[href^="/api/invoice-file/"]').href.split('/').pop(), {
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+            });
+            
+            if (!response.ok) throw new Error('Failed to fetch file');
+            
+            const blob = await response.blob();
+            const mimeType = response.headers.get('content-type') || blob.type || 'application/octet-stream';
+            
+            await navigator.clipboard.write([
+                new ClipboardItem({ [mimeType]: blob })
+            ]);
+            
+            button.textContent = 'Copied!';
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.disabled = false;
+            }, 1500);
+        } catch (err) {
+            console.error('Failed to copy file:', err);
+            button.textContent = 'Error';
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.disabled = false;
+            }, 1500);
+        }
+    }
+});
+</script>

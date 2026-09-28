@@ -3,9 +3,8 @@ from enum import Enum
 from sqlalchemy import (
     Column, Integer, String, DateTime, ForeignKey, Enum as SQLEnum, Text, Numeric, Index
 )
-from sqlalchemy.orm import relationship, declarative_base
-
-Base = declarative_base()
+from sqlalchemy.orm import relationship
+from .database import Base
 
 
 class InvoiceStatus(str, Enum):

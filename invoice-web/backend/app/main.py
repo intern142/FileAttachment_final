@@ -1,81 +1,83 @@
-import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
-
-from .database import init_db, engine
-from .models import Base, Contractor, Source
-from .api import auth, routes
-from .core.config import get_settings
-from .api.auth import get_current_user
 from sqlalchemy.orm import Session
+import os
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-settings = get_settings()
+from app.database import engine, get_db, Base
+from app.models import Contractor, Source, User
+from app.api import auth, routes
+from app.api.auth import get_current_user_optional
+from app.core.config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    db = Session(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    
+    db = next(get_db())
     try:
         if db.query(Contractor).count() == 0:
-            contractors = [
-                Contractor(name="ABC Constructions", short_code="ABC"),
+            default_contractors = [
+                Contractor(name="ABC Contractors", short_code="ABC"),
                 Contractor(name="XYZ Builders", short_code="XYZ"),
-                Contractor(name="PQR Infra", short_code="PQR"),
+                Contractor(name="PQR Engineering", short_code="PQR"),
             ]
-            db.add_all(contractors)
+            for c in default_contractors:
+                db.add(c)
+        
         if db.query(Source).count() == 0:
-            sources = [
-                Source(name="WhatsApp", short_code="WA"),
-                Source(name="Email", short_code="EM"),
-                Source(name="Portal", short_code="PT"),
+            default_sources = [
+                Source(name="Materials", short_code="MAT"),
+                Source(name="Labor", short_code="LAB"),
+                Source(name="Equipment", short_code="EQP"),
+                Source(name="Transport", short_code="TRN"),
             ]
-            db.add_all(sources)
+            for s in default_sources:
+                db.add(s)
+        
         db.commit()
     finally:
         db.close()
+    
+    os.makedirs(settings.STORAGE_PATH, exist_ok=True)
+    os.makedirs(os.path.join(settings.STORAGE_PATH, "temp"), exist_ok=True)
+    
     yield
 
 
-app = FastAPI(title="Invoice Manager", lifespan=lifespan)
+app = FastAPI(title="Invoice OCR", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+templates = Jinja2Templates(directory="../frontend/templates")
+
+app.mount("/temp", StaticFiles(directory=os.path.join(settings.STORAGE_PATH, "temp")), name="temp")
 
 app.include_router(auth.router)
 app.include_router(routes.router)
 
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "frontend", "templates"))
 
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "static")), name="static")
+@app.get("/")
+async def root(
+    request: Request,
+    current_user: User = Depends(get_current_user_optional),
+):
+    return templates.TemplateResponse("upload.html", {"request": request, "user": current_user})
 
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request, current_user = Depends(get_current_user)):
-    return templates.TemplateResponse("upload.html", {"request": request})
+@app.get("/upload")
+async def upload_page(
+    request: Request,
+    current_user: User = Depends(get_current_user_optional),
+):
+    return templates.TemplateResponse("upload.html", {"request": request, "user": current_user})
 
 
-@app.get("/login", response_class=HTMLResponse)
+@app.get("/login")
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse("login.html", {"request": request, "user": None})
 
 
-@app.get("/register", response_class=HTMLResponse)
+@app.get("/register")
 async def register_page(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request})
-
-
-@app.get("/invoices", response_class=HTMLResponse)
-async def invoices_page(request: Request):
-    return RedirectResponse(url="/invoices/page")
+    return templates.TemplateResponse("register.html", {"request": request, "user": None})

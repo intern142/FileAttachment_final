@@ -49,72 +49,55 @@
 - Verified filename generation works correctly with real invoice files
 - Application runs successfully on http://localhost:8001 using docker-compose-test.yml
 
+## What Was Completed (This Session - Main Branch)
+
+**Missing Endpoints Implemented**
+- Created `backend/app/services/organize.py` - Path generation, file move, DB save, audit logging
+  - Folder structure: `/storage/{user}/{quarter}/{month}/Week_{n}/{contractor_short}-{source_short}-{YYYYMMDD}.ext`
+- Implemented all missing API endpoints in `backend/app/api/routes.py`:
+  - `POST /api/confirm` - Parse date, call organize service, save Invoice, audit log
+  - `GET /invoices` (HTML page) - Full page with filters, pagination
+  - `GET /invoices/table` (HTML partial) - HTMX partial for filtering/pagination
+  - `GET /api/invoices` (JSON) - API endpoint with filters/pagination
+  - `GET /invoices/stats` - Dashboard stats
+  - `GET /contractors`, `GET /sources` - Dropdown data
+  - `GET /invoices/{id}/download` - File download
+  - `GET /api/invoice-file/{id}` - For copy-to-clipboard feature
+
+**Docker Fixes**
+- Fixed `invoice-web/backend/app/main.py` - Removed `/static` mount causing startup error
+- Fixed `invoice-web/backend/app/api/auth.py` - Added `get_current_user_optional` function
+
+**Frontend Templates Already Existed**
+- list.html - Filter form + HTMX table partial
+- partials/invoice_table.html - Reusable table with pagination
+
 ## What Remains
 
-- POST /api/confirm - parse date, generate path, move to storage, save Invoice row
-- GET /invoices - list with filters (date, contractor, source), pagination
-- Download endpoints
-- AuditLog integration in confirm + list routes
-- list.html template
-- Wire review.html confirm button (already exists, posts to /api/confirm)
+- Test full flow end-to-end: Upload → OCR → Review → Confirm → List/Download
+- Verify folder structure: `/storage/{user}/{quarter}/{month}/Week_{n}/{contractor_short}-{source_short}-{YYYYMMDD}.ext`
+- Docker build takes 5-10 minutes (installing tesseract, poppler, gcc, etc.)
 
-## Files Changed (Member B - feature1 branch)
+## Files Changed (This Session)
 
 ```
-backend/app/api/routes.py
+backend/app/services/organize.py              # NEW
+backend/app/api/routes.py                     # Added all missing endpoints
+invoice-web/backend/app/main.py               # Fixed static mount issue
+invoice-web/backend/app/api/auth.py           # Added get_current_user_optional
 ```
 
-## Files Changed (Member A)
-```
-docker-compose.yml
-backend/Dockerfile
-backend/requirements.txt
-backend/app/__init__.py
-backend/app/core/config.py
-backend/app/core/security.py
-backend/app/core/__init__.py
-backend/app/models.py
-backend/app/schemas.py
-backend/app/database.py
-backend/app/main.py
-backend/app/api/__init__.py
-backend/app/api/auth.py
-backend/app/api/routes.py
-backend/app/services/__init__.py
-backend/app/services/ocr.py
-frontend/templates/base.html
-frontend/templates/upload.html
-frontend/templates/review.html
-frontend/templates/login.html
-frontend/templates/register.html
-```
+## Bugs Discovered & Fixed (This Session)
 
-## Bugs Discovered & Fixed
-
-1. **psycopg2-binary build failure** - Missing libpq-dev + gcc in Dockerfile → added
-2. **pydantic_settings missing** - Added to requirements.txt
-3. **email-validator missing** - Required for EmailStr, added to requirements.txt
-4. **Syntax error in main.py** - Missing colon after `try:` → fixed
-5. **Template paths** - Frontend not copied to container → fixed Dockerfile COPY paths
-6. **Build context** - Dockerfile in backend/ but context is root → updated docker-compose.yml build config
-7. **passlib + bcrypt incompatibility** - `AttributeError: bcrypt has no __about__` and `ValueError: password cannot be longer than 72 bytes` caused `/auth/register` → 500. Fixed by pinning `passlib[bcrypt]==1.7.4` and `bcrypt==4.0.1` in requirements.txt; also installed pinned versions inside the running container and restarted (image pip layer was cached).
-8. **Templates missing in container** - `RuntimeError: File at path frontend/templates/upload.html does not exist` on `/` and `/login` → 500, because `./backend:/app` bind-mount shadowed the image's `/app/frontend`. Fixed by adding `./frontend:/app/frontend` volume to docker-compose.yml.
-9. **401 on protected routes despite valid token** - `get_current_user` parsed the JWT payload (which carries `sub`) into `TokenData(user_id=...)`, always yielding `None` → 401 "Could not validate credentials". Fixed in `auth.py` by reading `sub` directly and converting to int.
-10. **bcrypt 5.0.0 still active in running container** - Despite requirements.txt pinning, the image pip layer was cached. Fixed by `pip install --force-reinstall bcrypt==4.0.1 passlib==1.7.4` inside the container + restart; verified `bcrypt 4.0.1` / `passlib 1.7.4`.
-
-## E2E Verification (Member A flow, done locally)
-
-- `POST /auth/register` (JSON) → 200, returns `access_token`
-- `POST /auth/login` (form-urlencoded) → 200, returns `access_token`
-- `POST /api/upload` (Bearer + multipart file `storage/temp/test_invoice.png`) → 200, `job_id` + OCR text + parsed contractor/source/date/amount + contractor/source dropdown options
-- `GET /review/{job_id}` (Bearer) → 200, full review page with `/temp/{job_id}_{filename}` image preview and form pre-filled from OCR
-- `GET /` → 200
-
-Note: OCR `amount` prefill comes back as raw line `Amount: 1250.00 USD` (not stripped to number) - cosmetic, backend.net parsing is enough to display; confirm endpoint can clean it.
+1. **Missing `organize.py` service** - Created from `invoice-web/backend/app/services/organize.py` with adjusted imports
+2. **Missing API endpoints** - Implemented all confirm, list, stats, download endpoints
+3. **Docker startup error** - `/static` mount referenced non-existent `frontend/static` directory
+4. **Missing `get_current_user_optional`** - Added to `invoice-web/backend/app/api/auth.py` for root route compatibility
+5. **Docker layer caching** - Image rebuild required `--no-cache` to pick up code changes
 
 ## Decisions Made
 
-- Sync OCR (no queue) - simpler for 3-hour scope
+- Sync OCR (no queue) - simpler for scope
 - Server-rendered HTMX/Jinja2 - no frontend build step
 - Local ./storage bind-mounted in Docker
 - JWT HS256 with 30-min expiry
@@ -123,18 +106,12 @@ Note: OCR `amount` prefill comes back as raw line `Amount: 1250.00 USD` (not str
 - **Member B decision**: Hide raw OCR data from users while extracting needed fields for smart filenames
 - **Member B decision**: Use today's actual date instead of extracted date for filename consistency
 - **Member B decision**: Smart filename format: {contractor}_{purchasedfrom}_{YYYYMMDD}.{extension}
+- **This session**: Use existing `invoice-web/backend/app/services/organize.py` as reference for file organization logic
 
 ## Next Recommended Steps
 
-1. **Member B** to complete remaining endpoints:
-   - POST /api/confirm - implement file organization and database storage
-   - GET /invoices - implement listing with filters and pagination
-   - Add download endpoints
-   - Complete AuditLog integration
-   - Create list.html template
-
-2. Test full flow: Upload → OCR → Review → Confirm → List/Download
-
-3. Verify folder structure: /storage/{user}/{quarter}/{month}/Week_{n}/{contractor_short}-{source_short}-{YYYYMMDD}.ext
-
-4. Merge feature1 branch into main after completion
+1. **Wait for Docker build to complete** (5-10 min - installing system packages)
+2. **Test full flow**: Register → Login → Upload → OCR → Review → Confirm → List/Download
+3. **Verify folder structure**: `/storage/{user}/{quarter}/{month}/Week_{n}/{contractor_short}-{source_short}-{YYYYMMDD}.ext`
+4. **Test download and copy-to-clipboard** functionality
+5. **Merge feature1 branch into main** after verification

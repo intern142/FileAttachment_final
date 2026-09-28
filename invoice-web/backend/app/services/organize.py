@@ -6,9 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Invoice, InvoiceStatus, AuditLog
 from ..schemas import ConfirmRequest
-from ..core.config import get_settings
-
-settings = get_settings()
+from ..core.config import settings
 
 
 def generate_storage_path(
@@ -23,7 +21,7 @@ def generate_storage_path(
     week = f"Week_{week_num:02d}"
     filename = f"{contractor_short}-{source_short}-{invoice_date.strftime('%Y%m%d')}"
     return os.path.join(
-        settings.storage_path,
+        settings.STORAGE_PATH,
         str(user_id),
         quarter,
         month,

@@ -28,11 +28,10 @@ from ..schemas import (
 )
 from ..services.organize import process_confirm
 from .auth import get_current_user
-from ..core.config import get_settings
+from ..core.config import settings
 
-settings = get_settings()
 router = APIRouter()
-templates = Jinja2Templates(directory="frontend/templates")
+templates = Jinja2Templates(directory="../../frontend/templates")
 
 TEMP_DIR = "/tmp/invoice_uploads"
 os.makedirs(TEMP_DIR, exist_ok=True)

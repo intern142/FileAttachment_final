@@ -1,73 +1,105 @@
-from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from jose import JWTError
+from datetime import timedelta
+from typing import Optional
+from pydantic import EmailStr
 
-from ..core.config import get_settings
-from ..core.security import (
+from app.core.config import settings
+from app.core.security import (
     verify_password,
     get_password_hash,
     create_access_token,
-    decode_token,
+    decode_access_token,
 )
-from ..models import User
-from ..schemas import UserCreate, UserLogin, Token, TokenData
-from ..database import get_db
+from app.models import User
+from app.schemas import UserCreate, UserLogin, Token
+from app.database import get_db
 
-settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["auth"])
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-def get_db_session():
-    db = next(get_db())
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-@router.post("/register", response_model=Token)
-def register(email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db_session)):
-    existing = db.query(User).filter(User.email == email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(email=email, hashed_password=get_password_hash(password))
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    access_token = create_access_token(
-        data={"sub": str(user.id)}, expires_delta=timedelta(minutes=settings.access_token_expire_minutes)
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-@router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db_session)):
-    user = db.query(User).filter(User.email == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    access_token = create_access_token(
-        data={"sub": str(user.id)}, expires_delta=timedelta(minutes=settings.access_token_expire_minutes)
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db_session)) -> User:
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    payload = decode_token(token)
-    if not payload:
+    payload = decode_access_token(token)
+    if payload is None:
         raise credentials_exception
-    user_id: str = payload.get("sub")
-    if not user_id:
+    sub = payload.get("sub")
+    if sub is None:
         raise credentials_exception
-    token_data = TokenData(user_id=int(user_id))
-    user = db.query(User).filter(User.id == token_data.user_id).first()
-    if not user:
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        raise credentials_exception
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
         raise credentials_exception
     return user
+
+
+def get_current_user_optional(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return None
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        return None
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+    sub = payload.get("sub")
+    if sub is None:
+        return None
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        return None
+    return db.query(User).filter(User.id == user_id).first()
+
+
+@router.post("/register", response_model=Token)
+def register(email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = get_password_hash(password)
+    user = User(email=email, hashed_password=hashed_password)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    access_token = create_access_token(
+        data={"sub": str(user.id)},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/login", response_model=Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token = create_access_token(
+        data={"sub": str(user.id)},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
