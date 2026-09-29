@@ -4,9 +4,9 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
 
-from ..models import Invoice, InvoiceStatus, AuditLog
-from ..schemas import ConfirmRequest
-from ..core.config import settings
+from app.models import Invoice, InvoiceStatus, AuditLog
+from app.schemas import ConfirmRequest
+from app.core.config import settings
 
 
 def generate_storage_path(
@@ -59,7 +59,7 @@ def save_invoice(
         amount=amount,
         file_path=file_path,
         ocr_json=ocr_json,
-        status=InvoiceStatus.confirmed
+        status=InvoiceStatus.CONFIRMED
     )
     db.add(invoice)
     db.commit()
