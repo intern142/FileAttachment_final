@@ -3,6 +3,7 @@ import io
 import uuid
 import json
 import shutil
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
@@ -15,6 +16,7 @@ from math import ceil
 
 try:
     import pytesseract
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Users\test user 2\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
     from pdf2image import convert_from_bytes
     from PIL import Image
     OCR_AVAILABLE = True
@@ -31,7 +33,9 @@ from .auth import get_current_user
 from ..core.config import settings
 
 router = APIRouter()
-templates = Jinja2Templates(directory="../../frontend/templates")
+import pathlib
+TEMPLATE_DIR = pathlib.Path(__file__).parent.parent.parent.parent / "frontend" / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 TEMP_DIR = "/tmp/invoice_uploads"
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -58,6 +62,15 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
 
 
 import io
+
+
+def generate_display_filename(contractor_name: str, source_name: str, original_filename: str) -> str:
+    """Generate filename: contractorname_purchased from_today date.extension"""
+    ext = os.path.splitext(original_filename)[1]
+    today = datetime.now().strftime("%Y%m%d")
+    contractor_clean = re.sub(r'[^\w\s-]', '', contractor_name).strip().replace(' ', '_')
+    source_clean = re.sub(r'[^\w\s-]', '', source_name).strip().replace(' ', '_')
+    return f"{contractor_clean}_purchased_from_{source_clean}_{today}{ext}"
 
 
 @router.post("/api/upload")
@@ -92,6 +105,29 @@ async def upload_invoice(
             ocr_data['date'] = line.strip()
         if any(kw in line_lower for kw in ['amount', 'total', 'sum']):
             ocr_data['amount'] = line.strip()
+    
+    def clean_value(val, keywords):
+        if not val:
+            return None
+        val_lower = val.lower()
+        for kw in keywords:
+            if kw in val_lower:
+                val = val[len(kw):].strip()
+                val = val.lstrip(':').strip()
+                break
+        return val
+    
+    contractor_name = clean_value(ocr_data['contractor'], ['contractor', 'vendor', 'supplier']) or "Unknown_Contractor"
+    source_name = clean_value(ocr_data['source'], ['source', 'channel', 'via']) or "Unknown_Source"
+    display_filename = generate_display_filename(contractor_name, source_name, file.filename)
+    
+    display_path = os.path.join(TEMP_DIR, f"{job_id}_{display_filename}")
+    shutil.copy2(temp_path, display_path)
+    
+    ocr_data['display_filename'] = display_filename
+    ocr_data['contractor_name'] = contractor_name
+    ocr_data['source_name'] = source_name
+    
     ocr_file = os.path.join(TEMP_DIR, f"{job_id}_ocr.json")
     with open(ocr_file, "w") as f:
         json.dump(ocr_data, f)
@@ -105,26 +141,29 @@ async def review_invoice(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    ocr_file = os.path.join(TEMP_DIR, f"{job_id}_ocr.json")
-    if not os.path.exists(ocr_file):
-        raise HTTPException(status_code=404, detail="Review session expired")
-    with open(ocr_file) as f:
-        ocr_data = json.load(f)
-    temp_files = [f for f in os.listdir(TEMP_DIR) if f.startswith(job_id) and not f.endswith('_ocr.json')]
-    if not temp_files:
-        raise HTTPException(status_code=404, detail="Upload session expired")
-    image_url = f"/api/temp-file/{temp_files[0]}"
-    contractors = db.query(Contractor).all()
-    sources = db.query(Source).all()
-    return templates.TemplateResponse("review.html", {
-        "request": request,
-        "job_id": job_id,
-        "image_url": image_url,
-        "extracted": ocr_data,
-        "ocr_text": ocr_data.get("text", ""),
-        "contractors": contractors,
-        "sources": sources
-    })
+    try:
+        ocr_file = os.path.join(TEMP_DIR, f"{job_id}_ocr.json")
+        if not os.path.exists(ocr_file):
+            raise HTTPException(status_code=404, detail="Review session expired")
+        with open(ocr_file) as f:
+            ocr_data = json.load(f)
+        temp_files = [f for f in os.listdir(TEMP_DIR) if f.startswith(job_id) and not f.endswith('_ocr.json')]
+        if not temp_files:
+            raise HTTPException(status_code=404, detail="Upload session expired")
+        image_url = f"/api/temp-file/{temp_files[0]}"
+        contractors = db.query(Contractor).all()
+        sources = db.query(Source).all()
+        return templates.TemplateResponse("review.html", {
+            "request": request,
+            "job_id": job_id,
+            "image_url": image_url,
+            "extracted": ocr_data,
+            "ocr_text": ocr_data.get("text", ""),
+            "contractors": contractors,
+            "sources": sources
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/api/temp-file/{filename}")
@@ -143,15 +182,23 @@ async def confirm_invoice(
     source_id: int = Form(...),
     date: str = Form(...),
     amount: str = Form(...),
+    display_filename: str = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     temp_dir = "/tmp/invoice_uploads"
-    temp_files = [f for f in os.listdir(temp_dir) if f.startswith(job_id)]
+    temp_files = [f for f in os.listdir(temp_dir) if f.startswith(job_id) and not f.endswith('_ocr.json')]
     if not temp_files:
         raise HTTPException(status_code=404, detail="Upload session expired")
-    temp_file_path = os.path.join(temp_dir, temp_files[0])
-    original_filename = temp_files[0].replace(f"{job_id}_", "")
+    
+    if display_filename:
+        temp_file_path = os.path.join(temp_dir, f"{job_id}_{display_filename}")
+        if not os.path.exists(temp_file_path):
+            temp_file_path = os.path.join(temp_dir, temp_files[0])
+    else:
+        temp_file_path = os.path.join(temp_dir, temp_files[0])
+    
+    original_filename = display_filename or temp_files[0].replace(f"{job_id}_", "")
     invoice_date = datetime.strptime(date, "%Y-%m-%d")
     contractor = db.query(Contractor).filter(Contractor.id == contractor_id).first()
     source = db.query(Source).filter(Source.id == source_id).first()
