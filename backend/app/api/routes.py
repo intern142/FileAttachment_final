@@ -22,6 +22,7 @@ from app.services.ocr import extract_text, parse_ocr_text
 from app.services.organize import process_confirm, log_audit
 from app.core.config import settings
 from app.core.security import decode_access_token
+from app.utils.security import sanitize_ocr_text, get_relative_file_path
 
 router = APIRouter()
 
@@ -81,6 +82,7 @@ async def upload_invoice(
 
     job_id, ocr_text = extract_text(file_bytes, file.filename)
 
+    ocr_text = sanitize_ocr_text(ocr_text)
     parsed = parse_ocr_text(ocr_text)
 
     contractor_name = parsed.get("contractor") or "unknown_contractor"
@@ -133,12 +135,13 @@ async def review_invoice(
     if os.path.exists(ocr_file):
         with open(ocr_file, "r") as f:
             ocr_data = json.load(f)
-        ocr_text = ocr_data.get("text", "")
+        ocr_text = sanitize_ocr_text(ocr_data.get("text", ""))
         parsed = ocr_data.get("parsed", {})
     else:
         with open(temp_path, "rb") as f:
             file_bytes = f.read()
         _, ocr_text = extract_text(file_bytes, original_filename)
+        ocr_text = sanitize_ocr_text(ocr_text)
         parsed = parse_ocr_text(ocr_text)
         with open(ocr_file, "w") as f:
             json.dump({"text": ocr_text, "parsed": parsed}, f)
@@ -237,6 +240,7 @@ async def confirm_invoice(
         with open(temp_path, "rb") as f:
             file_bytes = f.read()
         _, ocr_text = extract_text(file_bytes, filename)
+        ocr_text = sanitize_ocr_text(ocr_text)
         ocr_json = json.dumps({"text": ocr_text, "parsed": parse_ocr_text(ocr_text)})
 
     invoice = process_confirm(
@@ -317,7 +321,7 @@ async def invoices_page(
             contractor_short=inv.contractor.short_code,
             source_name=inv.source.name,
             source_short=inv.source.short_code,
-            file_path=inv.file_path,
+            file_path=get_relative_file_path(inv.file_path, settings.STORAGE_PATH),
             status=inv.status.value,
             created_at=inv.created_at
         ))
@@ -381,7 +385,7 @@ async def invoices_table(
             contractor_short=inv.contractor.short_code,
             source_name=inv.source.name,
             source_short=inv.source.short_code,
-            file_path=inv.file_path,
+            file_path=get_relative_file_path(inv.file_path, settings.STORAGE_PATH),
             status=inv.status.value,
             created_at=inv.created_at
         ))
@@ -438,7 +442,7 @@ async def invoices_api(
                 "contractor_short": inv.contractor.short_code,
                 "source": inv.source.name,
                 "source_short": inv.source.short_code,
-                "file_path": inv.file_path,
+                "file_path": get_relative_file_path(inv.file_path, settings.STORAGE_PATH),
                 "status": inv.status.value,
                 "created_at": inv.created_at.isoformat()
             }
