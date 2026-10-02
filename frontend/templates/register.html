@@ -52,15 +52,25 @@
 {% block scripts %}
 <script>
     document.body.addEventListener('htmx:afterRequest', function(evt) {
-        if (evt.detail.target.id === 'result' && evt.detail.xhr.status === 200) {
-            try {
-                const response = JSON.parse(evt.detail.xhr.responseText);
-                if (response.access_token) {
-                    localStorage.setItem('access_token', response.access_token);
-                    window.location.href = '/invoices';
+        if (evt.detail.target.id === 'result') {
+            if (evt.detail.xhr.status === 200) {
+                try {
+                    const response = JSON.parse(evt.detail.xhr.responseText);
+                    if (response.access_token) {
+                        localStorage.setItem('access_token', response.access_token);
+                        window.location.href = '/invoices';
+                    }
+                } catch (e) {
+                    // Not JSON, show response as is
                 }
-            } catch (e) {
-                // Not JSON, ignore
+            } else if (evt.detail.xhr.status >= 400) {
+                try {
+                    const response = JSON.parse(evt.detail.xhr.responseText);
+                    const message = response.detail || 'Registration failed';
+                    evt.detail.target.innerHTML = '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">' + message + '</div>';
+                } catch (e) {
+                    evt.detail.target.innerHTML = '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Registration failed. Please try again.</div>';
+                }
             }
         }
     });
