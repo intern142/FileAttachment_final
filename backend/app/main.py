@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Request
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
@@ -50,8 +49,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Invoice OCR", lifespan=lifespan)
 
 templates = Jinja2Templates(directory="frontend/templates")
-
-app.mount("/temp", StaticFiles(directory=os.path.join(settings.STORAGE_PATH, "temp")), name="temp")
 
 app.include_router(auth.router)
 app.include_router(routes.router)

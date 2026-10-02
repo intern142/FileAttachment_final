@@ -47,3 +47,21 @@
     </div>
 </div>
 {% endblock %}
+
+{% block scripts %}
+<script>
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.target.id === 'result' && evt.detail.xhr.status === 200) {
+            try {
+                const response = JSON.parse(evt.detail.xhr.responseText);
+                if (response.access_token) {
+                    localStorage.setItem('access_token', response.access_token);
+                    window.location.href = '/invoices';
+                }
+            } catch (e) {
+                // Not JSON, ignore
+            }
+        }
+    });
+</script>
+{% endblock %}

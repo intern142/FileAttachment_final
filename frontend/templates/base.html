@@ -15,9 +15,12 @@
                 {% if user %}
                     <span class="text-sm text-gray-600">{{ user.email }}</span>
                     <a href="/invoices" class="text-sm text-blue-600 hover:text-blue-800">View Invoices</a>
-                    <form action="/auth/logout" method="post" class="inline">
-                        <button type="submit" class="text-sm text-gray-600 hover:text-gray-800">Logout</button>
-                    </form>
+                    <button 
+                        onclick="logout()" 
+                        class="text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
+                    >
+                        Logout
+                    </button>
                 {% else %}
                     <a href="/login" class="text-sm text-blue-600 hover:text-blue-800">Login</a>
                     <a href="/register" class="text-sm text-blue-600 hover:text-blue-800">Register</a>
@@ -35,5 +38,29 @@
             Invoice OCR System
         </div>
     </footer>
+
+    <script>
+        function logout() {
+            const token = localStorage.getItem('access_token');
+            if (token) {
+                fetch('/auth/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    }
+                }).then(() => {
+                    localStorage.removeItem('access_token');
+                    window.location.href = '/login';
+                }).catch(() => {
+                    localStorage.removeItem('access_token');
+                    window.location.href = '/login';
+                });
+            } else {
+                window.location.href = '/login';
+            }
+        }
+    </script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>
