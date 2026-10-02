@@ -98,7 +98,7 @@ def get_current_user_optional(
 
 @router.post("/register", response_model=Token)
 def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db)):
-    client_ip = request.client.host
+    client_ip = request.client.host if request.client else "testclient"
     if not check_auth_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many registration attempts. Please try again later.")
 
@@ -121,7 +121,7 @@ def register(request: Request, user_data: UserCreate, db: Session = Depends(get_
 
 @router.post("/login", response_model=Token)
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    client_ip = request.client.host
+    client_ip = request.client.host if request.client else "testclient"
     if not check_auth_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many login attempts. Please try again later.")
 

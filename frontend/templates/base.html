@@ -40,6 +40,14 @@
     </footer>
 
     <script>
+        // Configure htmx to include Authorization header from localStorage
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            const token = localStorage.getItem('access_token');
+            if (token && !evt.detail.headers['Authorization']) {
+                evt.detail.headers['Authorization'] = 'Bearer ' + token;
+            }
+        });
+
         function logout() {
             const token = localStorage.getItem('access_token');
             if (token) {

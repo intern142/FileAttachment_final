@@ -25,7 +25,9 @@ from app.core.security import decode_access_token
 
 router = APIRouter()
 
-templates = Jinja2Templates(directory="frontend/templates")
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+TEMPLATE_DIR = BASE_DIR / "frontend" / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 TEMP_STORAGE = os.path.join(settings.STORAGE_PATH, "temp")
 os.makedirs(TEMP_STORAGE, exist_ok=True)

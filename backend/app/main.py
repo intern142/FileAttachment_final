@@ -3,12 +3,16 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
+from pathlib import Path
 
 from app.database import engine, get_db
 from app.models import Base, Contractor, Source, User
 from app.api import auth, routes
 from app.api.auth import get_current_user_optional
 from app.core.config import settings
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+TEMPLATE_DIR = BASE_DIR / "frontend" / "templates"
 
 
 @asynccontextmanager
@@ -48,7 +52,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Invoice OCR", lifespan=lifespan)
 
-templates = Jinja2Templates(directory="frontend/templates")
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 app.include_router(auth.router)
 app.include_router(routes.router)
