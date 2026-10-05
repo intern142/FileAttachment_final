@@ -26,7 +26,7 @@ from app.utils.security import sanitize_ocr_text, get_relative_file_path
 
 router = APIRouter()
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TEMPLATE_DIR = BASE_DIR / "frontend" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
