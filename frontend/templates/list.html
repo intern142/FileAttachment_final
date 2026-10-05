@@ -52,4 +52,217 @@
     <div id="invoices-table">
         {% include "partials/invoice_table.html" %}
     </div>
+<!-- Rename Modal -->
+<div id="reviewModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+    <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">Review Invoice</h3>
+        <div class="border border-gray-200 rounded-lg bg-gray-50 p-2 mb-4 max-h-[40vh] overflow-auto">
+            <iframe id="reviewPreviewFrame" class="w-full h-[35vh] hidden border-0"></iframe>
+            <img id="reviewPreviewImg" class="max-h-[35vh] mx-auto hidden" alt="Invoice preview">
+        </div>
+        <form id="reviewForm" class="space-y-4">
+            <input type="hidden" id="reviewInvoiceId">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Contractor *</label>
+                <input type="text" id="reviewContractor" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Purchased From *</label>
+                <input type="text" id="reviewPurchasedFrom" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                <input type="date" id="reviewDate" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Amount *</label>
+                <input type="text" id="reviewAmount" required placeholder="e.g., 1500.00" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div id="reviewError" class="text-red-600 text-sm hidden"></div>
+            <div class="flex justify-end space-x-3 pt-4">
+                <button type="button" onclick="closeReviewModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">Confirm & Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="renameModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Rename Invoice</h3>
+            <form id="renameForm" class="space-y-4">
+                <input type="hidden" id="renameInvoiceId">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Contractor Name *</label>
+                    <input type="text" id="renameContractor" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Purchased From *</label>
+                    <input type="text" id="renamePurchasedFrom" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                    <input type="date" id="renameDate" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <div id="renameError" class="text-red-600 text-sm hidden"></div>
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button type="button" onclick="closeRenameModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm">
+                        Rename
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openRenameModal(invoiceId, contractor, purchasedFrom, date) {
+    document.getElementById('renameInvoiceId').value = invoiceId;
+    document.getElementById('renameContractor').value = contractor.startsWith('unknown') ? '' : contractor;
+    document.getElementById('renamePurchasedFrom').value = purchasedFrom.startsWith('unknown') ? '' : purchasedFrom;
+    document.getElementById('renameDate').value = date === 'unknown_date' ? '' : date;
+    document.getElementById('renameError').classList.add('hidden');
+    document.getElementById('renameModal').classList.remove('hidden');
+}
+
+function closeRenameModal() {
+    document.getElementById('renameModal').classList.add('hidden');
+}
+
+document.getElementById('renameForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const invoiceId = document.getElementById('renameInvoiceId').value;
+    const contractor = document.getElementById('renameContractor').value;
+    const purchasedFrom = document.getElementById('renamePurchasedFrom').value;
+    const date = document.getElementById('renameDate').value;
+    
+    const formData = new FormData();
+    formData.append('contractor', contractor);
+    formData.append('purchased_from', purchasedFrom);
+    formData.append('date', date);
+    
+    try {
+        const response = await fetch(`/invoices/${invoiceId}/rename`, {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+            },
+            body: formData
+        });
+        
+        if (response.ok) {
+            closeRenameModal();
+            // Refresh the invoice list
+            htmx.trigger('#invoices-table', 'htmx:trigger');
+            location.reload();
+        } else {
+            const error = await response.json();
+            document.getElementById('renameError').textContent = error.detail || 'Rename failed';
+            document.getElementById('renameError').classList.remove('hidden');
+        }
+    } catch (err) {
+        document.getElementById('renameError').textContent = 'Network error: ' + err.message;
+        document.getElementById('renameError').classList.remove('hidden');
+    }
+});
+
+function openReviewModal(invoiceId, contractor, purchasedFrom, date, amount, filename) {
+    document.getElementById('reviewInvoiceId').value = invoiceId;
+    document.getElementById('reviewContractor').value = contractor.startsWith('unknown') ? '' : contractor;
+    document.getElementById('reviewPurchasedFrom').value = purchasedFrom.startsWith('unknown') ? '' : purchasedFrom;
+    document.getElementById('reviewDate').value = date === 'unknown_date' ? '' : date;
+    document.getElementById('reviewAmount').value = amount;
+    document.getElementById('reviewError').classList.add('hidden');
+    const url = '/api/invoice-file/' + invoiceId;
+    const isPdf = (filename || '').toLowerCase().endsWith('.pdf');
+    const frame = document.getElementById('reviewPreviewFrame');
+    const img = document.getElementById('reviewPreviewImg');
+    if (isPdf) {
+        frame.src = url;
+        frame.classList.remove('hidden');
+        img.classList.add('hidden');
+    } else {
+        img.src = url;
+        img.classList.remove('hidden');
+        frame.classList.add('hidden');
+        frame.src = '';
+    }
+    document.getElementById('reviewModal').classList.remove('hidden');
+}
+
+function closeReviewModal() {
+    document.getElementById('reviewModal').classList.add('hidden');
+}
+
+document.getElementById('reviewForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const invoiceId = document.getElementById('reviewInvoiceId').value;
+    const formData = new FormData();
+    formData.append('contractor', document.getElementById('reviewContractor').value);
+    formData.append('purchased_from', document.getElementById('reviewPurchasedFrom').value);
+    formData.append('date', document.getElementById('reviewDate').value);
+    formData.append('amount', document.getElementById('reviewAmount').value);
+    try {
+        const response = await fetch(`/invoices/${invoiceId}/review-confirm`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
+            body: formData
+        });
+        if (response.ok) {
+            closeReviewModal();
+            location.reload();
+        } else {
+            const error = await response.json();
+            document.getElementById('reviewError').textContent = error.detail || 'Failed';
+            document.getElementById('reviewError').classList.remove('hidden');
+        }
+    } catch (err) {
+        document.getElementById('reviewError').textContent = 'Network error: ' + err.message;
+        document.getElementById('reviewError').classList.remove('hidden');
+    }
+});
+
+async function confirmInvoice(invoiceId) {
+    try {
+        const response = await fetch(`/invoices/${invoiceId}/confirm`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+        });
+        if (response.ok) {
+            location.reload();
+        } else {
+            const err = await response.json().catch(() => ({}));
+            alert(err.detail || 'Failed to confirm invoice');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+function deleteInvoice(invoiceId) {
+    if (!confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) {
+        return;
+    }
+    
+    fetch(`/invoices/${invoiceId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+        }
+    }).then(response => {
+        if (response.ok) {
+            // Refresh the invoice list
+            location.reload();
+        } else {
+            alert('Failed to delete invoice');
+        }
+    }).catch(err => {
+        alert('Error: ' + err.message);
+    });
+}
+</script>
 {% endblock %}

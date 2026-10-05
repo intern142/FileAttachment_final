@@ -60,6 +60,13 @@ def get_current_user(
         raise credentials_exception
     payload = decode_access_token(token)
     if payload is None:
+        # Header token may be stale/expired — fall back to the cookie token
+        cookie_token = request.cookies.get("access_token")
+        if cookie_token and cookie_token != token:
+            payload = decode_access_token(cookie_token)
+            if payload is not None:
+                token = cookie_token
+    if payload is None:
         raise credentials_exception
     sub = payload.get("sub")
     if sub is None:

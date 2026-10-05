@@ -26,20 +26,32 @@
                             {{ inv.status }}
                         </span>
                     </td>
-                    <td class="px-4 py-3 text-sm">
-                        <div class="flex items-center space-x-2">
-                            <a href="/api/invoice-file/{{ inv.id }}" 
-                               class="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                               download="{{ inv.file_path.split('/')[-1] }}">
-                                Download
-                            </a>
+                        <td class="px-4 py-3 text-sm">
+                            <div class="flex items-center space-x-3 whitespace-nowrap">
+                                <button type="button" onclick="openReviewModal({{ inv.id }}, '{{ inv.contractor_name }}', '{{ inv.source_name }}', '{{ inv.date.strftime('%Y-%m-%d') }}', '{{ "%.2f"|format(inv.amount) }}', '{{ inv.file_path.split('/')[-1] }}')" class="text-blue-600 hover:text-blue-800 font-medium">Review</button>
+                                <a href="/api/invoice-file/{{ inv.id }}"
+                                   class="text-gray-600 hover:text-gray-800 font-medium"
+                                   download="{{ inv.file_path.split('/')[-1] }}">
+                                    Download
+                                </a>
+                            {% if inv.status != 'confirmed' %}
                             <button 
+                                type="button"
+                                onclick="confirmInvoice({{ inv.id }})"
+                                class="text-green-600 hover:text-green-800 text-sm font-medium"
+                            >
+                                Confirm
+                            </button>
+                            {% endif %}
+                            <button 
+                                type="button"
                                 onclick="openRenameModal({{ inv.id }}, '{{ inv.contractor_name }}', '{{ inv.source_name }}', '{{ inv.date.strftime('%Y-%m-%d') }}')"
                                 class="text-yellow-600 hover:text-yellow-800 text-sm font-medium"
                             >
                                 Rename
                             </button>
                             <button 
+                                type="button"
                                 onclick="deleteInvoice({{ inv.id }})"
                                 class="text-red-600 hover:text-red-800 text-sm font-medium"
                             >
@@ -83,109 +95,3 @@
     {% endif %}
 </div>
 
-<!-- Rename Modal -->
-<div id="renameModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
-    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-        <div class="mt-3">
-            <h3 class="text-lg font-medium text-gray-900 mb-4">Rename Invoice</h3>
-            <form id="renameForm" class="space-y-4">
-                <input type="hidden" id="renameInvoiceId">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Contractor Name *</label>
-                    <input type="text" id="renameContractor" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Purchased From *</label>
-                    <input type="text" id="renamePurchasedFrom" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-                    <input type="date" id="renameDate" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
-                </div>
-                <div id="renameError" class="text-red-600 text-sm hidden"></div>
-                <div class="flex justify-end space-x-3 pt-4">
-                    <button type="button" onclick="closeRenameModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm">
-                        Rename
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<script>
-function openRenameModal(invoiceId, contractor, purchasedFrom, date) {
-    document.getElementById('renameInvoiceId').value = invoiceId;
-    document.getElementById('renameContractor').value = contractor.startsWith('unknown') ? '' : contractor;
-    document.getElementById('renamePurchasedFrom').value = purchasedFrom.startsWith('unknown') ? '' : purchasedFrom;
-    document.getElementById('renameDate').value = date === 'unknown_date' ? '' : date;
-    document.getElementById('renameError').classList.add('hidden');
-    document.getElementById('renameModal').classList.remove('hidden');
-}
-
-function closeRenameModal() {
-    document.getElementById('renameModal').classList.add('hidden');
-}
-
-document.getElementById('renameForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const invoiceId = document.getElementById('renameInvoiceId').value;
-    const contractor = document.getElementById('renameContractor').value;
-    const purchasedFrom = document.getElementById('renamePurchasedFrom').value;
-    const date = document.getElementById('renameDate').value;
-    
-    const formData = new FormData();
-    formData.append('contractor', contractor);
-    formData.append('purchased_from', purchasedFrom);
-    formData.append('date', date);
-    
-    try {
-        const response = await fetch(`/invoices/${invoiceId}/rename`, {
-            method: 'POST',
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('access_token')
-            },
-            body: formData
-        });
-        
-        if (response.ok) {
-            closeRenameModal();
-            // Refresh the invoice list
-            htmx.trigger('#invoices-table', 'htmx:trigger');
-            location.reload();
-        } else {
-            const error = await response.json();
-            document.getElementById('renameError').textContent = error.detail || 'Rename failed';
-            document.getElementById('renameError').classList.remove('hidden');
-        }
-    } catch (err) {
-        document.getElementById('renameError').textContent = 'Network error: ' + err.message;
-        document.getElementById('renameError').classList.remove('hidden');
-    }
-});
-
-function deleteInvoice(invoiceId) {
-    if (!confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) {
-        return;
-    }
-    
-    fetch(`/invoices/${invoiceId}`, {
-        method: 'DELETE',
-        headers: {
-            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
-        }
-    }).then(response => {
-        if (response.ok) {
-            // Refresh the invoice list
-            location.reload();
-        } else {
-            alert('Failed to delete invoice');
-        }
-    }).catch(err => {
-        alert('Error: ' + err.message);
-    });
-}
-</script>
