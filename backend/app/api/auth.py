@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Form, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from typing import Optional
 from collections import defaultdict
 import time
+import re
+from pydantic import EmailStr
+from pydantic_core import PydanticCustomError
 
 from app.core.config import settings
 from app.core.security import (
@@ -14,7 +17,7 @@ from app.core.security import (
     decode_access_token,
 )
 from app.models import User
-from app.schemas import UserCreate, UserLogin, Token
+from app.schemas import Token
 from app.database import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -72,12 +75,19 @@ def get_current_user_optional(
     request: Request,
     db: Session = Depends(get_db)
 ) -> Optional[User]:
+    # Check Authorization header first
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.lower().startswith("bearer "):
-        return None
-    token = auth_header.split(" ", 1)[1].strip()
+    token = None
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    
+    # If no header token, check cookie
+    if not token:
+        token = request.cookies.get("access_token")
+    
     if not token:
         return None
+    
     payload = decode_access_token(token)
     if payload is None:
         return None
@@ -96,18 +106,34 @@ def get_current_user_optional(
     return user
 
 
+def validate_email(email: str) -> str:
+    try:
+        EmailStr._validate(email)
+    except PydanticCustomError as e:
+        raise HTTPException(status_code=422, detail="Invalid email format")
+    return email
+
+def validate_password(password: str) -> str:
+    if len(password) < 6:
+        raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
+    return password
+
+
 @router.post("/register", response_model=Token)
-def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db)):
+def register(request: Request, email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    email = validate_email(email)
+    password = validate_password(password)
+    
     client_ip = request.client.host if request.client else "testclient"
     if not check_auth_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many registration attempts. Please try again later.")
 
-    existing = db.query(User).filter(User.email == user_data.email).first()
+    existing = db.query(User).filter(User.email == email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    hashed_password = get_password_hash(user_data.password)
-    user = User(email=user_data.email, hashed_password=hashed_password)
+    hashed_password = get_password_hash(password)
+    user = User(email=email, hashed_password=hashed_password)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -141,6 +167,8 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
 
 
 @router.post("/logout")
-def logout(token: str = Depends(oauth2_scheme)):
+def logout(token: str = Depends(oauth2_scheme), response: Response = None):
     block_token(token)
+    if response:
+        response.delete_cookie("access_token", path="/")
     return {"message": "Successfully logged out"}

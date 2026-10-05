@@ -5,10 +5,11 @@
     <div class="bg-white rounded-lg shadow-md p-6">
         <h1 class="text-2xl font-bold text-gray-800 mb-6">Upload Invoice</h1>
         
-        <form 
-            hx-post="/api/upload" 
-            hx-target="#result" 
-            hx-swap="innerHTML"
+            <form
+                id="upload-form"
+                hx-post="/api/upload"
+                hx-target="#result"
+                hx-swap="none"
             hx-indicator="#loader"
             enctype="multipart/form-data"
             class="space-y-4"
@@ -59,6 +60,89 @@
     </div>
 </div>
 
+<div id="uploadRenameModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">Rename Invoice</h3>
+        <form id="uploadRenameForm" class="space-y-4">
+            <input type="hidden" id="uploadRenameJobId">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Contractor *</label>
+                <input type="text" id="uploadRenameContractor" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Purchased From *</label>
+                <input type="text" id="uploadRenamePurchasedFrom" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                <input type="date" id="uploadRenameDate" required class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div id="uploadRenameError" class="text-red-600 text-sm hidden"></div>
+            <div class="flex justify-end space-x-3 pt-4">
+                <button type="button" onclick="closeUploadRename()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm">Rename</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openUploadRename(jobId, contractor, purchasedFrom, date) {
+        document.getElementById('uploadRenameJobId').value = jobId;
+        document.getElementById('uploadRenameContractor').value = contractor.startsWith('unknown') ? '' : contractor;
+        document.getElementById('uploadRenamePurchasedFrom').value = purchasedFrom.startsWith('unknown') ? '' : purchasedFrom;
+        document.getElementById('uploadRenameDate').value = date && date !== 'unknown_date' ? date : '';
+        document.getElementById('uploadRenameError').classList.add('hidden');
+        document.getElementById('uploadRenameModal').classList.remove('hidden');
+    }
+    function closeUploadRename() {
+        document.getElementById('uploadRenameModal').classList.add('hidden');
+    }
+    document.getElementById('uploadRenameForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const jobId = document.getElementById('uploadRenameJobId').value;
+        const formData = new FormData();
+        formData.append('contractor', document.getElementById('uploadRenameContractor').value);
+        formData.append('purchased_from', document.getElementById('uploadRenamePurchasedFrom').value);
+        formData.append('date', document.getElementById('uploadRenameDate').value);
+        try {
+            const resp = await fetch(`/api/upload/${jobId}/rename`, {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
+                body: formData
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                document.getElementById('uploaded-filename').textContent = data.generated_filename;
+                closeUploadRename();
+            } else {
+                const err = await resp.json();
+                document.getElementById('uploadRenameError').textContent = err.detail || 'Rename failed';
+                document.getElementById('uploadRenameError').classList.remove('hidden');
+            }
+        } catch (err) {
+            document.getElementById('uploadRenameError').textContent = 'Network error: ' + err.message;
+            document.getElementById('uploadRenameError').classList.remove('hidden');
+        }
+    });
+    async function deleteUpload(jobId) {
+        if (!confirm('Delete this upload?')) return;
+        try {
+            const resp = await fetch(`/api/upload/${jobId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+            });
+            if (resp.ok) {
+                document.getElementById('result').innerHTML = '';
+            } else {
+                alert('Failed to delete');
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+</script>
+
 <script>
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('file-input');
@@ -105,6 +189,37 @@
         fileName.textContent = this.files[0]?.name || '';
         fileName.classList.toggle('hidden', !this.files[0]);
         submitBtn.disabled = !this.files[0];
+    });
+
+    // Format upload result
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.elt && evt.detail.elt.id === 'upload-form' && evt.detail.successful) {
+            try {
+                const resp = JSON.parse(evt.detail.xhr.response);
+                if (resp.generated_filename) {
+                    const contractor = resp.extracted?.contractor || '';
+                    const purchasedFrom = resp.extracted?.purchased_from || '';
+                    const date = resp.extracted?.date || '';
+                    const html = `
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-green-800 mb-2">Upload Successful!</h3>
+                            <div class="text-sm text-gray-700">
+                                <strong>Renamed Invoice:</strong>
+                                <code id="uploaded-filename" class="bg-gray-100 px-2 py-1 rounded font-mono">${resp.generated_filename}</code>
+                            </div>
+                            <div class="flex gap-2 mt-4">
+                                <a href="/review/${resp.job_id}" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Review</a>
+                                <button type="button" onclick="openUploadRename('${resp.job_id}', '${contractor}', '${purchasedFrom}', '${date}')" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm">Rename</button>
+                                <button type="button" onclick="deleteUpload('${resp.job_id}')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('result').innerHTML = html;
+                }
+            } catch (e) {
+                console.error('Error parsing upload response:', e);
+            }
+        }
     });
 </script>
 {% endblock %}

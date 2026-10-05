@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import shutil
 import magic
 from datetime import datetime
@@ -26,7 +27,7 @@ from app.utils.security import sanitize_ocr_text, get_relative_file_path
 
 router = APIRouter()
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TEMPLATE_DIR = BASE_DIR / "frontend" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
@@ -48,6 +49,23 @@ def check_rate_limit(client_ip: str, max_requests: int = 10, window_seconds: int
         return False
     requests.append(now)
     return True
+
+def _get_or_create_named(db: Session, model, name: str):
+    obj = db.query(model).filter(model.name == name).first()
+    if obj:
+        return obj
+    base = re.sub(r'[^A-Za-z0-9]', '', name).upper()[:3] or "UNK"
+    short_code = base
+    suffix = 1
+    while db.query(model).filter(model.short_code == short_code).first():
+        suffix += 1
+        short_code = f"{base[:7]}{suffix}"[:10]
+    obj = model(name=name, short_code=short_code)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
 
 def validate_file_path(file_path: str, allowed_base: str) -> bool:
     try:
@@ -85,35 +103,157 @@ async def upload_invoice(
     ocr_text = sanitize_ocr_text(ocr_text)
     parsed = parse_ocr_text(ocr_text)
 
+    # Fallback: missing fields become explicit unknown placeholders so the
+    # user can correct them through the Rename UI instead of showing
+    # arbitrary OCR text.
     contractor_name = parsed.get("contractor") or "unknown_contractor"
     purchased_from = parsed.get("source") or "unknown_source"
 
-    import re
-    contractor_name = re.sub(r'[^\w\-_]', '_', contractor_name.strip())
-    purchased_from = re.sub(r'[^\w\-_]', '_', purchased_from.strip())
+    # Sanitize names for filename
+    contractor_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', contractor_name.strip().replace(" ", "_")).strip('._-')
+    purchased_from_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', purchased_from.strip().replace(" ", "_")).strip('._-')
+    if not contractor_safe:
+        contractor_safe = "unknown_contractor"
+    if not purchased_from_safe:
+        purchased_from_safe = "unknown_source"
 
-    today_date = datetime.now().strftime("%Y%m%d")
+    # Use the extracted invoice date when confident; otherwise unknown
+    parsed_date = parsed.get("date")
+    if parsed_date:
+        try:
+            datetime.strptime(parsed_date, "%Y-%m-%d")
+            today_date = parsed_date
+        except ValueError:
+            today_date = "unknown_date"
+    else:
+        today_date = "unknown_date"
 
     _, file_extension = os.path.splitext(file.filename)
     if not file_extension:
         file_extension = ".jpg"
 
+    # Generate the proper filename: contractor_purchasedfrom_YYYY-MM-DD.extension
+    generated_filename = f"{contractor_safe}_{purchased_from_safe}_{today_date}{file_extension}"
+
+    # Save physically in the configured storage location
+    invoice_date = datetime.now()
+    quarter = f"Q{(invoice_date.month - 1) // 3 + 1}"
+    month = invoice_date.strftime("%m_%B")
+    week_num = (invoice_date.day - 1) // 7 + 1
+    week = f"Week_{week_num:02d}"
+    
+    storage_path = os.path.join(
+        settings.STORAGE_PATH,
+        str(current_user.id),
+        quarter,
+        month,
+        week
+    )
+    os.makedirs(storage_path, exist_ok=True)
+    
+    # Save with the generated filename as the final stored file
+    final_path = os.path.join(storage_path, generated_filename)
+    with open(final_path, "wb") as f:
+        f.write(file_bytes)
+
+    # Also save to temp for review page (with UUID for temp only)
     temp_filename = f"{job_id}_{file.filename}"
     temp_path = os.path.join(TEMP_STORAGE, temp_filename)
     with open(temp_path, "wb") as f:
         f.write(file_bytes)
+
+    # Save OCR data to temp
+    ocr_file = os.path.join(TEMP_STORAGE, f"{job_id}_ocr.json")
+    with open(ocr_file, "w") as f:
+        json.dump({"text": ocr_text, "parsed": parsed, "generated_filename": generated_filename, "stored_path": final_path}, f)
 
     contractors = db.query(Contractor).all()
     sources = db.query(Source).all()
 
     return {
         "job_id": job_id,
-        "filename": temp_filename,
+        "filename": generated_filename,  # Return the actual saved filename, not UUID
         "original_filename": file.filename,
+        "generated_filename": generated_filename,
+        "extracted": {
+            "contractor": parsed.get("contractor"),
+            "purchased_from": parsed.get("source"),
+            "date": parsed.get("date")
+        },
         "contractors": [{"id": c.id, "name": c.name, "short_code": c.short_code} for c in contractors],
         "sources": [{"id": s.id, "name": s.name, "short_code": s.short_code} for s in sources],
         "message": "File uploaded successfully. Please review and confirm."
     }
+
+
+@router.post("/api/upload/{job_id}/rename")
+async def rename_upload(
+    job_id: str,
+    contractor: str = Form(...),
+    purchased_from: str = Form(...),
+    date: str = Form(...),
+    current_user: User = Depends(get_current_user),
+):
+    ocr_file = os.path.join(TEMP_STORAGE, f"{job_id}_ocr.json")
+    if not os.path.exists(ocr_file):
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    with open(ocr_file, "r") as f:
+        meta = json.load(f)
+
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    contractor_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', contractor.strip().replace(" ", "_")).strip('._-') or "unknown_contractor"
+    purchased_from_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', purchased_from.strip().replace(" ", "_")).strip('._-') or "unknown_source"
+
+    old_path = meta.get("stored_path", "")
+    ext = os.path.splitext(meta.get("generated_filename", "file.jpg"))[1] or ".jpg"
+    new_filename = f"{contractor_safe}_{purchased_from_safe}_{date}{ext}"
+    new_path = os.path.join(os.path.dirname(old_path), new_filename)
+
+    if old_path and os.path.exists(old_path) and validate_file_path(new_path, settings.STORAGE_PATH):
+        shutil.move(old_path, new_path)
+
+    meta["generated_filename"] = new_filename
+    meta["stored_path"] = new_path
+    parsed = meta.get("parsed", {})
+    parsed["contractor"] = contractor.strip()
+    parsed["source"] = purchased_from.strip()
+    parsed["date"] = date
+    meta["parsed"] = parsed
+    with open(ocr_file, "w") as f:
+        json.dump(meta, f)
+
+    return {"generated_filename": new_filename}
+
+
+@router.delete("/api/upload/{job_id}")
+async def delete_upload(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    ocr_file = os.path.join(TEMP_STORAGE, f"{job_id}_ocr.json")
+    if os.path.exists(ocr_file):
+        with open(ocr_file, "r") as f:
+            meta = json.load(f)
+        stored_path = meta.get("stored_path", "")
+        if stored_path and os.path.exists(stored_path) and validate_file_path(stored_path, settings.STORAGE_PATH):
+            try:
+                os.remove(stored_path)
+            except OSError:
+                pass
+
+    for f in list(os.listdir(TEMP_STORAGE)):
+        if f.startswith(job_id + "_"):
+            try:
+                os.remove(os.path.join(TEMP_STORAGE, f))
+            except OSError:
+                pass
+
+    return {"message": "Upload deleted"}
 
 
 @router.get("/review/{job_id}", response_class=HTMLResponse)
@@ -123,7 +263,7 @@ async def review_invoice(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    temp_files = [f for f in os.listdir(TEMP_STORAGE) if f.startswith(job_id + "_")]
+    temp_files = [f for f in os.listdir(TEMP_STORAGE) if f.startswith(job_id + "_") and not f.endswith("_ocr.json")]
     if not temp_files:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -149,10 +289,42 @@ async def review_invoice(
     contractors = db.query(Contractor).all()
     sources = db.query(Source).all()
 
+    # Get the generated filename from the stored file
+    # The generated filename follows the pattern: contractor_purchased_from_source_YYYY-MM-DD.ext
+    invoice_date = datetime.now()
+    quarter = f"Q{(invoice_date.month - 1) // 3 + 1}"
+    month = invoice_date.strftime("%m_%B")
+    week_num = (invoice_date.day - 1) // 7 + 1
+    week = f"Week_{week_num:02d}"
+    
+    storage_dir = os.path.join(
+        settings.STORAGE_PATH,
+        str(current_user.id),
+        quarter,
+        month,
+        week
+    )
+    
+    # Find the stored file with the generated filename
+    stored_files = []
+    if os.path.exists(storage_dir):
+        stored_files = [f for f in os.listdir(storage_dir) if f.endswith(os.path.splitext(original_filename)[1])]
+    
+    stored_filename = None
+    if os.path.exists(ocr_file):
+        try:
+            with open(ocr_file, "r") as f:
+                stored_filename = json.load(f).get("generated_filename")
+        except (json.JSONDecodeError, OSError):
+            stored_filename = None
+
+    generated_filename = stored_filename or (stored_files[0] if stored_files else original_filename)
+
     return templates.TemplateResponse("review.html", {
         "request": request,
         "job_id": job_id,
         "filename": original_filename,
+        "generated_filename": generated_filename,
         "ocr_text": ocr_text,
         "parsed": parsed,
         "contractors": contractors,
@@ -228,7 +400,7 @@ async def confirm_invoice(
         job_id=job_id,
         contractor_id=contractor_id,
         source_id=source_id,
-        date=invoice_date,
+        date=invoice_date.strftime("%Y-%m-%d"),
         amount=str(invoice_amount)
     )
 
@@ -249,8 +421,8 @@ async def confirm_invoice(
         temp_file_path=temp_path,
         original_filename=filename,
         confirm_data=confirm_data,
-        contractor_short=contractor.short_code,
-        source_short=source.short_code,
+        contractor_name=contractor.name,
+        source_name=source.name,
         ocr_json=ocr_json
     )
 
@@ -500,6 +672,121 @@ async def get_sources(
     return db.query(Source).all()
 
 
+@router.post("/invoices/{invoice_id}/rename")
+async def rename_invoice(
+    invoice_id: int,
+    contractor: str = Form(...),
+    purchased_from: str = Form(...),
+    date: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    invoice = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        Invoice.user_id == current_user.id
+    ).first()
+
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if not os.path.exists(invoice.file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    # Validate date format
+    try:
+        invoice_date = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    # Sanitize names for filename
+    contractor_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', contractor.strip().replace(" ", "_")).strip('._-')
+    purchased_from_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', purchased_from.strip().replace(" ", "_")).strip('._-')
+    if not contractor_safe:
+        contractor_safe = "unknown_contractor"
+    if not purchased_from_safe:
+        purchased_from_safe = "unknown_source"
+
+    # Generate new filename: contractor_purchasedfrom_YYYY-MM-DD.extension
+    ext = os.path.splitext(invoice.file_path)[1]
+    new_filename = f"{contractor_safe}_{purchased_from_safe}_{invoice_date.strftime('%Y-%m-%d')}{ext}"
+
+    # Get new storage path
+    quarter = f"Q{(invoice_date.month - 1) // 3 + 1}"
+    month = invoice_date.strftime("%m_%B")
+    week_num = (invoice_date.day - 1) // 7 + 1
+    week = f"Week_{week_num:02d}"
+    
+    new_storage_path = os.path.join(
+        settings.STORAGE_PATH,
+        str(current_user.id),
+        quarter,
+        month,
+        week
+    )
+    os.makedirs(new_storage_path, exist_ok=True)
+    
+    new_file_path = os.path.join(new_storage_path, new_filename)
+    
+    # Validate new path is within storage
+    if not validate_file_path(new_file_path, settings.STORAGE_PATH):
+        raise HTTPException(status_code=403, detail="Invalid file path")
+
+    # Update the invoice record to reflect the corrected fields
+    contractor_obj = _get_or_create_named(db, Contractor, contractor.strip())
+    source_obj = _get_or_create_named(db, Source, purchased_from.strip())
+
+    # Perform the actual rename
+    try:
+        shutil.move(invoice.file_path, new_file_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to rename file: {str(e)}")
+
+    # Update invoice record
+    invoice.file_path = new_file_path
+    invoice.date = invoice_date
+    invoice.contractor_id = contractor_obj.id
+    invoice.source_id = source_obj.id
+    db.commit()
+    db.refresh(invoice)
+
+    return {
+        "message": "Invoice renamed successfully",
+        "new_filename": new_filename,
+        "new_file_path": get_relative_file_path(new_file_path, settings.STORAGE_PATH)
+    }
+
+
+@router.delete("/invoices/{invoice_id}")
+async def delete_invoice(
+    invoice_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    invoice = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        Invoice.user_id == current_user.id
+    ).first()
+
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Delete physical file if it exists
+    if os.path.exists(invoice.file_path):
+        # Validate path is within storage before deleting
+        if not validate_file_path(invoice.file_path, settings.STORAGE_PATH):
+            raise HTTPException(status_code=403, detail="Access denied")
+        try:
+            os.remove(invoice.file_path)
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+
+    # Delete from database
+    db.delete(invoice)
+    db.commit()
+
+    return {"message": "Invoice deleted successfully"}
+
+
 @router.get("/invoices/{invoice_id}/download")
 async def download_invoice(
     invoice_id: int,
@@ -555,7 +842,6 @@ async def get_invoice_file(
         db=db,
         user_id=current_user.id,
         action="download",
-        entity_type="invoice",
         entity_id=invoice.id,
         details=f"Downloaded invoice file"
     )

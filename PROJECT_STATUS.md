@@ -1,84 +1,87 @@
 # Project Status - Invoice Manager
 
-**Last Updated:** 2026-09-22
-**Branch:** `main` (merged from Member_B)
-**Latest Commit:** `24b32fd`
+**Last Updated:** 2026-10-05
+**Branch:** `main` (all 3 PRs merged)
+**Latest Commit:** `623ae79` (PR 3 restructure)
 
 ---
 
-## ✅ Completed Tasks (Full Project - Member A + Member B)
+## ✅ Completed Tasks (Full Project - All Phases)
 
-### Infrastructure
-- [x] `docker-compose.yml` - PostgreSQL 16 + Backend services (context: root, dockerfile: ./backend/Dockerfile)
-- [x] `backend/Dockerfile` - Python 3.11-slim with Tesseract + Poppler + libpq + gcc
-- [x] `backend/requirements.txt` - All dependencies pinned (bcrypt 4.0.1, passlib 1.7.4)
+### Phase 1: Organize Service Fixes (PR 1 - `pr1-organize-fixes`)
+- [x] Fixed absolute imports in `invoice-web/backend/app/services/organize.py`
+- [x] Corrected `InvoiceStatus.CONFIRMED` enum usage (uppercase)
+- [x] Fixed `settings.STORAGE_PATH` attribute access
+- [x] Added missing `except` block in `review_invoice()` for proper error handling
 
-### Core Backend
-- [x] `backend/app/core/config.py` - Pydantic Settings (env-based)
-- [x] `backend/app/core/security.py` - JWT (HS256), bcrypt password hashing
-- [x] `backend/app/database.py` - SQLAlchemy 2.0 engine, session, init_db
+### Phase 2: Security Hardening (PR 2 - `pr2-security`)
+- [x] Rate limiting on `/auth/register` (3/hr), `/auth/login` (5/5min), `/api/upload` (10/min)
+- [x] Token blocklist for logout (`/auth/logout` endpoint)
+- [x] MIME validation via `python-magic` (magic bytes)
+- [x] Path traversal protection (`validate_file_path()`)
+- [x] OCR text sanitization (`sanitize_ocr_text()`)
+- [x] Authenticated temp file endpoint: `/api/temp-file/{job_id}/{filename}`
+- [x] CSP middleware with security headers
+- [x] Auth form error handling (429, 4xx display)
 
-### Models & Schemas
-- [x] `backend/app/models.py` - User, Contractor, Source, Invoice, AuditLog
-- [x] `backend/app/schemas.py` - Pydantic models for all API contracts
-
-### Auth API
-- [x] `backend/app/api/auth.py` - `/auth/register` (form-data), `/auth/login` (form-data), `get_current_user` dependency
-- [x] Register accepts `application/x-www-form-urlencoded` (HTMX compatible)
-- [x] Login uses OAuth2PasswordRequestForm (form-data)
-
-### Services
-- [x] `backend/app/services/organize.py` - Path generation, file move, DB save, audit logging
-  - Folder structure: `/storage/{user}/{quarter}/{month}/Week_{n}/{contractor_short}-{source_short}-{YYYYMMDD}.ext`
-
-### API Routes
-- [x] `backend/app/api/routes.py` - All endpoints:
-  - `POST /api/upload` - Save temp file, run OCR sync, return job_id + extracted data
-  - `GET /review/{job_id}` - Render review page with image + pre-filled fields
-  - `POST /api/confirm` - Parse date, call organize service, save Invoice, audit log
-  - `GET /invoices/page` - Full HTML page with filters (HTMX)
-  - `GET /invoices/table` - Partial table for HTMX filtering/pagination
-  - `GET /invoices` - JSON list (API)
-  - `GET /invoices/stats` - Dashboard stats
-  - `GET /contractors`, `GET /sources` - Dropdown data
-  - `GET /invoices/{id}/download` - File download
-
-### Main App
-- [x] `backend/app/main.py` - FastAPI + lifespan (DB init + seed contractors/sources)
-- [x] Route protection: `/` (upload) requires valid JWT via `Depends(get_current_user)`
-- [x] `/login` and `/register` pages accessible without auth
-
-### Frontend Templates
-- [x] `frontend/templates/base.html` - Bootstrap 5 + HTMX + auth header injection
-- [x] `frontend/templates/upload.html` - Dropzone, file preview, HTMX upload → redirect to review
-- [x] `frontend/templates/review.html` - Image preview, editable fields, HTMX confirm → redirect to list
-- [x] `frontend/templates/list.html` - Filter form + HTMX table partial
-- [x] `frontend/templates/partials/invoice_table.html` - Reusable table with pagination
-- [x] `frontend/templates/login.html` - HTMX form, stores JWT in localStorage, redirects to `/`
-- [x] `frontend/templates/register.html` - HTMX form, stores JWT in localStorage, redirects to `/`
+### Phase 3: Backend Restructure + PostgreSQL (PR 3 - `pr3-restructure`)
+- [x] New `/backend` directory with complete service layer separation
+- [x] **Alembic migrations** (`alembic.ini`, `env.py`, initial migration)
+- [x] **PostgreSQL-ready** (`psycopg2`, `DATABASE_URL` configurable)
+- [x] **Models**: User, Contractor, Source, Invoice, AuditLog (with indexes)
+- [x] **Schemas**: Complete Pydantic models with `InvoiceFilters`, `InvoiceListItem`
+- [x] **Services**:
+  - `organize.py` - Structured storage paths, file moves, audit logging
+  - `ocr.py` - Text extraction + basic parsing + XSS sanitization
+  - `utils/security.py` - Path helpers, text sanitization
+- [x] **Auth API**: JSON body register, OAuth2 form login, token blocklist, rate limits
+- [x] **API Routes**: New paginated endpoints (`/invoices`, `/invoices/table`, `/api/invoices`, `/invoices/stats`)
+- [x] **Main App**: CSP middleware, lifespan with DB init + seeding
+- [x] **Frontend**: New `list.html`, `partials/invoice_table.html`, `confirm_success.html`
+- [x] **Docker**: Updated `docker-compose.yml` for PostgreSQL + new structure
+- [x] **Config**: `.env.example` with required `SECRET_KEY`, rate limit settings
 
 ---
 
-## 📁 File Tree (main branch)
+## 📁 File Tree (main branch - restructured)
 
 ```
-invoice-web/
+FileAttachment_final/
 ├── docker-compose.yml
+├── .env.example
+├── .gitignore
+├── PROJECT_STATUS.md
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
+│   ├── .env.example
+│   ├── alembic.ini
+│   ├── alembic/
+│   │   ├── env.py
+│   │   ├── script.py.mako
+│   │   ├── README
+│   │   └── versions/
+│   │       └── 88f8dd99534b_initial_migration.py
 │   └── app/
+│       ├── __init__.py
 │       ├── main.py
 │       ├── models.py
 │       ├── schemas.py
 │       ├── database.py
 │       ├── api/
+│       │   ├── __init__.py
 │       │   ├── auth.py
 │       │   └── routes.py
 │       ├── services/
+│       │   ├── __init__.py
+│       │   ├── ocr.py
 │       │   └── organize.py
-│       └── core/
-│           ├── config.py
+│       ├── core/
+│       │   ├── __init__.py
+│       │   ├── config.py
+│       │   └── security.py
+│       └── utils/
+│           ├── __init__.py
 │           └── security.py
 ├── frontend/
 │   └── templates/
@@ -88,6 +91,7 @@ invoice-web/
 │       ├── list.html
 │       ├── login.html
 │       ├── register.html
+│       ├── confirm_success.html
 │       └── partials/
 │           └── invoice_table.html
 └── storage/ (created at runtime)
@@ -95,42 +99,69 @@ invoice-web/
 
 ---
 
-## 🚀 How to Run
+## 🚀 How to Run (Local Development)
 
 ```bash
 # 1. Clone
 git clone https://github.com/intern142/FileAttachment_final.git
 cd FileAttachment_final
 
-# 2. Start services
-cd invoice-web
-docker-compose up --build
+# 2. Create .env in backend/
+cd backend
+echo "DATABASE_URL=sqlite:///./invoice_manager.db" > .env
+echo "STORAGE_PATH=./storage" >> .env
+echo "SECRET_KEY=dev-secret-change-me" >> .env
 
-# 3. Open browser
-# http://localhost:8000 (or http://<your-lan-ip>:8000 for LAN access)
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Run server
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 5. Open browser
+# http://localhost:8000
 ```
 
-### Flow Test
-1. **Register** → `/register` → auto-login → upload page
-2. **Login** → `/login` → upload page
-3. **Upload** → Drop image/PDF → OCR runs → redirects to `/review/{job_id}`
-4. **Review** → Edit contractor/source/date/amount → **Confirm**
-5. **List** → `/invoices` → Filter, paginate, download
+### With Docker (Production/PostgreSQL)
+
+```bash
+# 1. Copy .env.example and set SECRET_KEY
+cp .env.example .env
+# Edit .env with strong SECRET_KEY
+
+# 2. Start services
+docker-compose up --build
+
+# 3. Run migrations (first time)
+docker-compose exec backend alembic upgrade head
+
+# 4. Open browser
+# http://localhost:8000
+```
 
 ---
 
-## 🔑 Key Fixes Applied (Post Member_B)
+## 🔄 User Flow
 
-| Issue | Fix |
-|-------|-----|
-| bcrypt 4.2.1 `__about__` error | Downgraded to `bcrypt==4.0.1` |
-| passlib 1.7.0 72-byte limit | Upgraded to `passlib==1.7.4` |
-| Register endpoint JSON-only | Changed to accept `Form(...)` for HTMX |
-| Route protection | `/` now requires JWT via `Depends(get_current_user)` |
-| Login/Register pages | Added `/login` and `/register` templates with HTMX |
-| Docker static files | Fixed volume mount conflict (removed `./backend:/app`) |
-| Static file paths | Used absolute paths via `BASE_DIR` in main.py |
-| psycopg2 build | Added `libpq-dev`, `gcc`, `build-essential` to Dockerfile |
+1. **Register** → `/register` → auto-login → upload page
+2. **Login** → `/login` → upload page
+3. **Upload** → Drop image/PDF → OCR runs → redirects to `/review/{job_id}`
+4. **Review** → Edit contractor/source/date/amount → **Confirm & Save**
+5. **List** → `/invoices` → Filter, paginate, download, copy file
+
+---
+
+## 🔑 Key Technical Decisions
+
+| Area | Decision |
+|------|----------|
+| **Database** | SQLite for local dev, PostgreSQL for production (via `DATABASE_URL`) |
+| **Migrations** | Alembic with autogenerate support |
+| **Auth** | JWT (HS256), 30-min expiry, token blocklist on logout |
+| **Storage** | Structured: `/storage/{user_id}/Q{N}/{month}/Week_{NN}/{contractor}-{source}-{date}.ext` |
+| **OCR** | pytesseract + pdf2image + PIL, basic keyword parsing |
+| **Security** | CSP, rate limits, MIME validation, path traversal protection, XSS sanitization |
+| **Frontend** | Tailwind CSS (CDN), HTMX 1.9.10, Jinja2 templates |
 
 ---
 
@@ -150,17 +181,30 @@ New-NetFirewallRule -DisplayName "Invoice App" -Direction Inbound -LocalPort 800
 ## ⚠️ Known Limitations (Out of Scope)
 
 - OCR parsing is basic (keyword-based) — improve regex/ML later
-- No tests, CI/CD, OAuth, S3, Celery, WebSockets
-- Temp files in `/tmp/invoice_uploads` (ephemeral)
+- No automated tests, CI/CD pipeline
+- No OAuth, S3 storage, Celery workers, WebSockets
+- Temp files in `/tmp/invoice_uploads` (ephemeral, per-job)
 - Single-user demo (no multi-org isolation)
 
 ---
 
-## 📝 Next Steps (if any)
+## 📝 Next Steps
 
-1. Polish OCR extraction, add validation, improve UI
-2. Deploy to staging (Render, Railway, Fly.io, etc.)
+1. ✅ **Phase 1**: Organize service fixes (merged)
+2. ✅ **Phase 2**: Security hardening (merged)
+3. ✅ **Phase 3**: Backend restructure + PostgreSQL + Alembic (merged)
+4. **Future**: Add tests, CI/CD, improve OCR, deploy to staging
 
 ---
 
-**Status:** ✅ All features complete, tested, and pushed to `main` (commit `24b32fd`).
+## 📊 PR Summary
+
+| PR | Branch | Focus | Files | Lines |
+|----|--------|-------|-------|-------|
+| #1 | `pr1-organize-fixes` | Organize service fixes | 2 | +28/-27 |
+| #2 | `pr2-security` | Security hardening | 8 | +505/-66 |
+| #3 | `pr3-restructure` | Full backend restructure | 38 | +1273/-84 |
+
+---
+
+**Status:** ✅ All 3 PRs merged to `main`. Server runs locally with SQLite. Ready for PostgreSQL deployment via Docker.

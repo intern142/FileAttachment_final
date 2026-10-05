@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -9,17 +10,48 @@ from app.schemas import ConfirmRequest
 from app.core.config import settings
 
 
+def sanitize_filename_part(value: str) -> str:
+    """Sanitize a filename part to be safe for filesystem."""
+    if not value:
+        return "unknown"
+    # Replace spaces with underscores
+    value = value.strip().replace(" ", "_")
+    # Remove any characters that are not alphanumeric, underscore, hyphen, or dot
+    value = re.sub(r'[^a-zA-Z0-9_\-\.]', '', value)
+    # Remove any leading/trailing dots or hyphens
+    value = value.strip('.-')
+    # Ensure not empty
+    if not value:
+        return "unknown"
+    # Limit length
+    return value[:100]
+
+
 def generate_storage_path(
     user_id: int,
-    contractor_short: str,
-    source_short: str,
+    contractor_name: str,
+    source_name: str,
     invoice_date: datetime
 ) -> str:
+    """Generate storage path with format: contractor_name_purchased_from_YYYY-MM-DD"""
+    contractor_safe = sanitize_filename_part(contractor_name)
+    source_safe = sanitize_filename_part(source_name)
+    
+    # Handle both datetime and string date formats
+    if isinstance(invoice_date, str):
+        try:
+            invoice_date = datetime.strptime(invoice_date, "%Y-%m-%d")
+        except ValueError:
+            invoice_date = datetime.now()
+    
+    date_str = invoice_date.strftime("%Y-%m-%d")
+    filename = f"{contractor_safe}_{source_safe}_{date_str}"
+    
     quarter = f"Q{(invoice_date.month - 1) // 3 + 1}"
     month = invoice_date.strftime("%m_%B")
     week_num = (invoice_date.day - 1) // 7 + 1
     week = f"Week_{week_num:02d}"
-    filename = f"{contractor_short}-{source_short}-{invoice_date.strftime('%Y%m%d')}"
+    
     return os.path.join(
         settings.STORAGE_PATH,
         str(user_id),
@@ -71,15 +103,13 @@ def log_audit(
     db: Session,
     user_id: int,
     action: str,
-    entity_type: str,
     entity_id: int = None,
     details: str = None
 ) -> AuditLog:
     audit = AuditLog(
         user_id=user_id,
         action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
+        invoice_id=entity_id,
         details=details
     )
     db.add(audit)
@@ -93,12 +123,12 @@ def process_confirm(
     temp_file_path: str,
     original_filename: str,
     confirm_data: ConfirmRequest,
-    contractor_short: str,
-    source_short: str,
+    contractor_name: str,
+    source_name: str,
     ocr_json: str = None
 ) -> Invoice:
     _, ext = os.path.splitext(original_filename)
-    dest_path = generate_storage_path(user_id, contractor_short, source_short, confirm_data.date)
+    dest_path = generate_storage_path(user_id, contractor_name, source_name, confirm_data.date)
     final_path = move_file_to_storage(temp_file_path, dest_path, ext)
     invoice = save_invoice(
         db=db,
@@ -114,7 +144,6 @@ def process_confirm(
         db=db,
         user_id=user_id,
         action="confirm",
-        entity_type="invoice",
         entity_id=invoice.id,
         details=f"Confirmed invoice from {original_filename}"
     )

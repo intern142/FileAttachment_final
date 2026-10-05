@@ -1,5 +1,12 @@
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Request, Response
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
@@ -12,7 +19,7 @@ from app.api.auth import get_current_user_optional
 from app.core.config import settings
 from app.utils.security import sanitize_ocr_text, get_relative_file_path
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = BASE_DIR / "frontend" / "templates"
 
 CSP_POLICY = (
@@ -71,15 +78,15 @@ app.include_router(auth.router)
 app.include_router(routes.router)
 
 
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response: Response = await call_next(request)
-    response.headers["Content-Security-Policy"] = CSP_POLICY
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
+# @app.middleware("http")
+# async def add_security_headers(request: Request, call_next):
+#     response: Response = await call_next(request)
+#     response.headers["Content-Security-Policy"] = CSP_POLICY
+#     response.headers["X-Content-Type-Options"] = "nosniff"
+#     response.headers["X-Frame-Options"] = "DENY"
+#     response.headers["X-XSS-Protection"] = "1; mode=block"
+#     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+#     return response
 
 
 @app.get("/")
@@ -87,7 +94,14 @@ async def root(
     request: Request,
     current_user: User = Depends(get_current_user_optional),
 ):
-    return templates.TemplateResponse("upload.html", {"request": request, "user": current_user})
+    if current_user:
+        return templates.TemplateResponse("upload.html", {"request": request, "user": current_user})
+    return RedirectResponse(url="/login", status_code=302)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 
 @app.get("/upload")
@@ -95,7 +109,9 @@ async def upload_page(
     request: Request,
     current_user: User = Depends(get_current_user_optional),
 ):
-    return templates.TemplateResponse("upload.html", {"request": request, "user": current_user})
+    if current_user:
+        return templates.TemplateResponse("upload.html", {"request": request, "user": current_user})
+    return RedirectResponse(url="/login", status_code=302)
 
 
 @app.get("/login")

@@ -11,6 +11,7 @@
             hx-swap="innerHTML"
             hx-indicator="#loader"
             class="space-y-4"
+            id="loginForm"
         >
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -38,4 +39,27 @@
         </p>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('loginForm').addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.successful) {
+        let resp = evt.detail.xhr.response;
+        try { resp = JSON.parse(resp); } catch (e) { resp = null; }
+        if (resp && resp.access_token) {
+            localStorage.setItem('access_token', resp.access_token);
+            // Also set cookie for full page navigation
+            document.cookie = 'access_token=' + resp.access_token + '; path=/; max-age=1800; SameSite=Lax';
+            window.location.href = '/';
+        }
+    } else if (evt.detail.xhr.status === 401 || evt.detail.xhr.status === 422) {
+        let resp = evt.detail.xhr.response;
+        try { resp = JSON.parse(resp); } catch (e) { resp = null; }
+        if (resp && resp.detail) {
+            document.getElementById('result').innerHTML = '<div class="text-red-600 text-sm mt-2">' + resp.detail + '</div>';
+        }
+    }
+});
+</script>
 {% endblock %}
