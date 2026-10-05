@@ -80,7 +80,7 @@
 
     ['dragleave', 'drop'].forEach(eventName => {
         dropzone.addEventListener(eventName, unhighlight, false);
-    });
+    })
 
     function highlight() {
         dropzone.classList.add('border-blue-500', 'bg-blue-50');

@@ -1,9 +1,20 @@
 import os
 import uuid
+import re
 import pytesseract
 from PIL import Image
 from pdf2image import convert_from_bytes
 from typing import Tuple
+
+
+def _sanitize_text(text: str) -> str:
+    """Remove HTML tags and potential XSS payloads from text."""
+    if not text:
+        return ""
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'on\w+\s*=', '', text, flags=re.IGNORECASE)
+    return text.strip()
 
 
 def extract_text(file_bytes: bytes, filename: str) -> Tuple[str, str]:
@@ -19,14 +30,14 @@ def extract_text(file_bytes: bytes, filename: str) -> Tuple[str, str]:
     else:
         text = _extract_from_image(file_bytes)
     
-    return job_id, text
+    return job_id, _sanitize_text(text)
 
 
 def _extract_from_image(file_bytes: bytes) -> str:
     import io
     image = Image.open(io.BytesIO(file_bytes))
     text = pytesseract.image_to_string(image)
-    return text
+    return _sanitize_text(text)
 
 
 def _extract_from_pdf(file_bytes: bytes) -> str:
@@ -35,7 +46,7 @@ def _extract_from_pdf(file_bytes: bytes) -> str:
     for image in images:
         text = pytesseract.image_to_string(image)
         texts.append(text)
-    return "\n\n".join(texts)
+    return _sanitize_text("\n\n".join(texts))
 
 
 def parse_ocr_text(text: str) -> dict:

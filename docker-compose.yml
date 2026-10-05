@@ -23,7 +23,7 @@ services:
     environment:
       DATABASE_URL: postgresql://app:app@db:5432/invoices
       STORAGE_PATH: /storage
-      SECRET_KEY: dev-secret-change-me
+      SECRET_KEY: ${SECRET_KEY}
     depends_on:
       - db
     command: uvicorn app.main:app --host 0.0.0.0 --reload
