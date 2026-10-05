@@ -208,3 +208,33 @@ New-NetFirewallRule -DisplayName "Invoice App" -Direction Inbound -LocalPort 800
 ---
 
 **Status:** ✅ All 3 PRs merged to `main`. Server runs locally with SQLite. Ready for PostgreSQL deployment via Docker.
+---
+
+## 2026-10-05 (Evening) - Upload Persistence, Review Flow, Invoice Actions
+
+Branch: fix-review-preview (not yet merged to main)
+
+### Upload result UI (commit 54c8d71)
+- [x] Upload response no longer dumps raw JSON (contractors/sources/message)
+- [x] Shows renamed invoice filename with 3 buttons: Review, Rename (modal), Delete
+- [x] New endpoints: POST /api/upload/{job_id}/rename, DELETE /api/upload/{job_id}
+- [x] Fixed htmx handler bug: checked evt.target.id instead of evt.detail.elt.id; form now uses hx-swap="none"
+
+### Auth fix for review page (commit bd778c4)
+- [x] get_current_user now falls back to access_token cookie (401 on /review fixed)
+- [x] oauth2_scheme uses auto_error=False
+
+### Invoice persistence + actions (commit 85780dd)
+- [x] Root cause of disappearing invoices: upload never created an invoices DB row (only /api/confirm did). Upload now creates a PENDING invoice row immediately (contractor/source get-or-create, parsed date/amount, stored renamed file path)
+- [x] /api/confirm updates the pending row instead of inserting a duplicate (process_confirm fallback retained)
+- [x] Rename persists: upload rename endpoint syncs DB row (file_path/date/contractor/source); list rename renames stored file
+- [x] Delete permanently removes stored file + DB row
+- [x] New POST /invoices/{id}/confirm (pending -> confirmed)
+- [x] New POST /invoices/{id}/review-confirm: editable contractor/source/date/amount, renames stored file to structured folder, sets CONFIRMED
+- [x] Per-row actions: Review | Download | Confirm | Rename | Delete (flex row, no overlap)
+- [x] Review modal moved out of htmx-swapped partial into list.html so buttons stay responsive; preview via /api/invoice-file img/iframe
+- [x] Cookie fallback when localStorage token is expired/stale
+
+### Verified
+- [x] Upload -> /invoices shows invoice; survives refresh, logout/login, container restart (Postgres 16 + /storage volume)
+- [x] Review/Rename/Delete/Confirm persist after refresh
