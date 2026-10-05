@@ -106,5 +106,31 @@
         fileName.classList.toggle('hidden', !this.files[0]);
         submitBtn.disabled = !this.files[0];
     });
+
+    // Format upload result
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.target.id === 'result' && evt.detail.successful) {
+            try {
+                const resp = JSON.parse(evt.detail.xhr.response);
+                if (resp.generated_filename) {
+                    const html = `
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-green-800 mb-2">Upload Successful!</h3>
+                            <div class="space-y-2 text-sm">
+                                <div><strong>Generated Filename:</strong> <code class="bg-gray-100 px-2 py-1 rounded">${resp.generated_filename}</code></div>
+                                <div><strong>Contractor:</strong> ${resp.extracted?.contractor || 'N/A'}</div>
+                                <div><strong>Purchased From:</strong> ${resp.extracted?.purchased_from || 'N/A'}</div>
+                                <div><strong>Date:</strong> ${resp.extracted?.date || 'N/A'}</div>
+                            </div>
+                            <p class="mt-3 text-sm text-green-700">File saved to storage. Proceed to review.</p>
+                        </div>
+                    `;
+                    document.getElementById('result').innerHTML = html;
+                }
+            } catch (e) {
+                console.error('Error parsing upload response:', e);
+            }
+        }
+    });
 </script>
 {% endblock %}

@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import shutil
 import magic
 from datetime import datetime
@@ -85,31 +86,92 @@ async def upload_invoice(
     ocr_text = sanitize_ocr_text(ocr_text)
     parsed = parse_ocr_text(ocr_text)
 
-    contractor_name = parsed.get("contractor") or "unknown_contractor"
-    purchased_from = parsed.get("source") or "unknown_source"
+    # Check if extraction failed - return error instead of silently using unknown values
+    contractor_name = parsed.get("contractor")
+    purchased_from = parsed.get("source")
+    
+    if not contractor_name or not purchased_from:
+        # Try to extract from filename as fallback
+        if not contractor_name:
+            contractor_name = os.path.splitext(file.filename)[0].replace('_', ' ')
+        if not purchased_from:
+            purchased_from = "Materials"
+        
+        # If still unknown, return extraction error
+        if not contractor_name or contractor_name.lower() in ['unknown', 'unknown_contractor']:
+            raise HTTPException(
+                status_code=422, 
+                detail="Could not extract contractor name from the invoice. Please ensure the invoice contains a clear company name or contractor label."
+            )
+        if not purchased_from or purchased_from.lower() in ['unknown', 'unknown_source']:
+            raise HTTPException(
+                status_code=422,
+                detail="Could not extract source/material from the invoice. Please ensure the invoice contains a clear item description or category."
+            )
 
-    import re
-    contractor_name = re.sub(r'[^\w\-_]', '_', contractor_name.strip())
-    purchased_from = re.sub(r'[^\w\-_]', '_', purchased_from.strip())
+    # Sanitize names for filename
+    contractor_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', contractor_name.strip().replace(" ", "_")).strip('._-')
+    purchased_from_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', purchased_from.strip().replace(" ", "_")).strip('._-')
+    if not contractor_safe:
+        contractor_safe = "unknown_contractor"
+    if not purchased_from_safe:
+        purchased_from_safe = "unknown_source"
 
-    today_date = datetime.now().strftime("%Y%m%d")
+    # Use today's date (server date)
+    today_date = datetime.now().strftime("%Y-%m-%d")
 
     _, file_extension = os.path.splitext(file.filename)
     if not file_extension:
         file_extension = ".jpg"
 
+    # Generate the proper filename: contractor_name_purchased_from_YYYY-MM-DD.extension
+    generated_filename = f"{contractor_safe}_purchased_from_{purchased_from_safe}_{today_date}{file_extension}"
+
+    # Save physically in the configured storage location
+    invoice_date = datetime.now()
+    quarter = f"Q{(invoice_date.month - 1) // 3 + 1}"
+    month = invoice_date.strftime("%m_%B")
+    week_num = (invoice_date.day - 1) // 7 + 1
+    week = f"Week_{week_num:02d}"
+    
+    storage_path = os.path.join(
+        settings.STORAGE_PATH,
+        str(current_user.id),
+        quarter,
+        month,
+        week
+    )
+    os.makedirs(storage_path, exist_ok=True)
+    
+    # Save with the generated filename as the final stored file
+    final_path = os.path.join(storage_path, generated_filename)
+    with open(final_path, "wb") as f:
+        f.write(file_bytes)
+
+    # Also save to temp for review page (with UUID for temp only)
     temp_filename = f"{job_id}_{file.filename}"
     temp_path = os.path.join(TEMP_STORAGE, temp_filename)
     with open(temp_path, "wb") as f:
         f.write(file_bytes)
+
+    # Save OCR data to temp
+    ocr_file = os.path.join(TEMP_STORAGE, f"{job_id}_ocr.json")
+    with open(ocr_file, "w") as f:
+        json.dump({"text": ocr_text, "parsed": parsed}, f)
 
     contractors = db.query(Contractor).all()
     sources = db.query(Source).all()
 
     return {
         "job_id": job_id,
-        "filename": temp_filename,
+        "filename": generated_filename,  # Return the actual saved filename, not UUID
         "original_filename": file.filename,
+        "generated_filename": generated_filename,
+        "extracted": {
+            "contractor": contractor_name,
+            "purchased_from": purchased_from,
+            "date": today_date
+        },
         "contractors": [{"id": c.id, "name": c.name, "short_code": c.short_code} for c in contractors],
         "sources": [{"id": s.id, "name": s.name, "short_code": s.short_code} for s in sources],
         "message": "File uploaded successfully. Please review and confirm."
@@ -123,7 +185,7 @@ async def review_invoice(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    temp_files = [f for f in os.listdir(TEMP_STORAGE) if f.startswith(job_id + "_")]
+    temp_files = [f for f in os.listdir(TEMP_STORAGE) if f.startswith(job_id + "_") and not f.endswith("_ocr.json")]
     if not temp_files:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -149,10 +211,34 @@ async def review_invoice(
     contractors = db.query(Contractor).all()
     sources = db.query(Source).all()
 
+    # Get the generated filename from the stored file
+    # The generated filename follows the pattern: contractor_purchased_from_source_YYYY-MM-DD.ext
+    invoice_date = datetime.now()
+    quarter = f"Q{(invoice_date.month - 1) // 3 + 1}"
+    month = invoice_date.strftime("%m_%B")
+    week_num = (invoice_date.day - 1) // 7 + 1
+    week = f"Week_{week_num:02d}"
+    
+    storage_dir = os.path.join(
+        settings.STORAGE_PATH,
+        str(current_user.id),
+        quarter,
+        month,
+        week
+    )
+    
+    # Find the stored file with the generated filename
+    stored_files = []
+    if os.path.exists(storage_dir):
+        stored_files = [f for f in os.listdir(storage_dir) if f.endswith(os.path.splitext(original_filename)[1])]
+    
+    generated_filename = stored_files[0] if stored_files else original_filename
+
     return templates.TemplateResponse("review.html", {
         "request": request,
         "job_id": job_id,
         "filename": original_filename,
+        "generated_filename": generated_filename,
         "ocr_text": ocr_text,
         "parsed": parsed,
         "contractors": contractors,
@@ -228,7 +314,7 @@ async def confirm_invoice(
         job_id=job_id,
         contractor_id=contractor_id,
         source_id=source_id,
-        date=invoice_date,
+        date=invoice_date.strftime("%Y-%m-%d"),
         amount=str(invoice_amount)
     )
 
@@ -249,8 +335,8 @@ async def confirm_invoice(
         temp_file_path=temp_path,
         original_filename=filename,
         confirm_data=confirm_data,
-        contractor_short=contractor.short_code,
-        source_short=source.short_code,
+        contractor_name=contractor.name,
+        source_name=source.name,
         ocr_json=ocr_json
     )
 
