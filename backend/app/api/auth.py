@@ -22,7 +22,7 @@ from app.database import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 _token_blocklist = set()
 
@@ -45,7 +45,8 @@ def check_auth_rate_limit(client_ip: str, max_requests: int = 5, window_seconds:
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
     credentials_exception = HTTPException(
@@ -53,6 +54,10 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        raise credentials_exception
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
