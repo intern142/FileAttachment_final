@@ -45,7 +45,7 @@ def generate_storage_path(
             invoice_date = datetime.now()
     
     date_str = invoice_date.strftime("%Y-%m-%d")
-    filename = f"{contractor_safe}_purchased_from_{source_safe}_{date_str}"
+    filename = f"{contractor_safe}_{source_safe}_{date_str}"
     
     quarter = f"Q{(invoice_date.month - 1) // 3 + 1}"
     month = invoice_date.strftime("%m_%B")
