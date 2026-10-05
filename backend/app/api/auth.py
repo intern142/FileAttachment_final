@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Form, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -75,12 +75,19 @@ def get_current_user_optional(
     request: Request,
     db: Session = Depends(get_db)
 ) -> Optional[User]:
+    # Check Authorization header first
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.lower().startswith("bearer "):
-        return None
-    token = auth_header.split(" ", 1)[1].strip()
+    token = None
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    
+    # If no header token, check cookie
+    if not token:
+        token = request.cookies.get("access_token")
+    
     if not token:
         return None
+    
     payload = decode_access_token(token)
     if payload is None:
         return None
@@ -160,6 +167,8 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
 
 
 @router.post("/logout")
-def logout(token: str = Depends(oauth2_scheme)):
+def logout(token: str = Depends(oauth2_scheme), response: Response = None):
     block_token(token)
+    if response:
+        response.delete_cookie("access_token", path="/")
     return {"message": "Successfully logged out"}

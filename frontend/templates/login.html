@@ -49,6 +49,8 @@ document.getElementById('loginForm').addEventListener('htmx:afterRequest', funct
         try { resp = JSON.parse(resp); } catch (e) { resp = null; }
         if (resp && resp.access_token) {
             localStorage.setItem('access_token', resp.access_token);
+            // Also set cookie for full page navigation
+            document.cookie = 'access_token=' + resp.access_token + '; path=/; max-age=1800; SameSite=Lax';
             window.location.href = '/';
         }
     } else if (evt.detail.xhr.status === 401 || evt.detail.xhr.status === 422) {

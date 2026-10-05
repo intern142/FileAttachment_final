@@ -59,12 +59,17 @@
                     }
                 }).then(() => {
                     localStorage.removeItem('access_token');
+                    // Clear cookie
+                    document.cookie = 'access_token=; path=/; max-age=0';
                     window.location.href = '/login';
                 }).catch(() => {
                     localStorage.removeItem('access_token');
+                    document.cookie = 'access_token=; path=/; max-age=0';
                     window.location.href = '/login';
                 });
             } else {
+                // Clear cookie anyway
+                document.cookie = 'access_token=; path=/; max-age=0';
                 window.location.href = '/login';
             }
         }
