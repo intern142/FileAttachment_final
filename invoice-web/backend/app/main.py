@@ -4,39 +4,59 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from .database import init_db, engine
+from .database import engine, get_db
 from .models import Base, Contractor, Source, User
 from .api import auth, routes
-from .core.config import get_settings
-from .api.auth import get_current_user, get_current_user_optional
+from .core.config import settings
+from .api.auth import get_current_user_optional
 from sqlalchemy.orm import Session
+
 
 BASE_DIR = os.getcwd()
 
-settings = get_settings()
+
+class CSPMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "connect-src 'self'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    db = Session(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = next(get_db())
     try:
         if db.query(Contractor).count() == 0:
-            contractors = [
-                Contractor(name="ABC Constructions", short_code="ABC"),
+            default_contractors = [
+                Contractor(name="ABC Contractors", short_code="ABC"),
                 Contractor(name="XYZ Builders", short_code="XYZ"),
-                Contractor(name="PQR Infra", short_code="PQR"),
+                Contractor(name="PQR Engineering", short_code="PQR"),
             ]
-            db.add_all(contractors)
+            for c in default_contractors:
+                db.add(c)
         if db.query(Source).count() == 0:
-            sources = [
-                Source(name="WhatsApp", short_code="WA"),
-                Source(name="Email", short_code="EM"),
-                Source(name="Portal", short_code="PT"),
+            default_sources = [
+                Source(name="Materials", short_code="MAT"),
+                Source(name="Labor", short_code="LAB"),
+                Source(name="Equipment", short_code="EQP"),
+                Source(name="Transport", short_code="TRN"),
             ]
-            db.add_all(sources)
+            for s in default_sources:
+                db.add(s)
         db.commit()
     finally:
         db.close()
@@ -44,6 +64,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Invoice Manager", lifespan=lifespan)
+
+app.add_middleware(CSPMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

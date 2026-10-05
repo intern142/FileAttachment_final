@@ -48,6 +48,14 @@ document.getElementById('loginForm').addEventListener('htmx:afterRequest', funct
             localStorage.setItem('access_token', resp.access_token);
             window.location.href = '/';
         }
+    } else if (evt.detail.xhr.status === 429) {
+        document.getElementById('loginResult').innerHTML = '<div class="alert alert-danger">Too many attempts. Please wait before trying again.</div>';
+    } else if (evt.detail.xhr.status >= 400) {
+        let resp = evt.detail.xhr.response;
+        try { resp = JSON.parse(resp); } catch (e) { resp = null; }
+        if (resp && resp.detail) {
+            document.getElementById('loginResult').innerHTML = '<div class="alert alert-danger">' + resp.detail + '</div>';
+        }
     }
 });
 </script>

@@ -4,9 +4,12 @@ import uuid
 import json
 import re
 import shutil
+import time
+import magic
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List
+from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -34,14 +37,44 @@ from ..services.extraction import (
     SUPPORTED_EXTENSIONS,
 )
 from .auth import get_current_user
-from ..core.config import get_settings
+from ..core.config import settings
 
-settings = get_settings()
 router = APIRouter()
 templates = Jinja2Templates(directory="frontend/templates")
 
 TEMP_DIR = "/tmp/invoice_uploads"
 os.makedirs(TEMP_DIR, exist_ok=True)
+
+ALLOWED_MIME_TYPES = {
+    "image/jpeg", "image/png", "image/gif", "image/bmp", "image/tiff", "image/webp",
+    "application/pdf"
+}
+
+_rate_limit_store = defaultdict(list)
+
+
+def check_rate_limit(client_ip: str, max_requests: int = 10, window_seconds: int = 60) -> bool:
+    now = time.time()
+    requests = _rate_limit_store[client_ip]
+    requests[:] = [req_time for req_time in requests if now - req_time < window_seconds]
+    if len(requests) >= max_requests:
+        return False
+    requests.append(now)
+    return True
+
+
+def validate_file_path(file_path: str, allowed_base: str) -> bool:
+    try:
+        resolved = os.path.realpath(file_path)
+        allowed = os.path.realpath(allowed_base)
+        return resolved.startswith(allowed)
+    except Exception:
+        return False
+
+
+def validate_file_type(file_bytes: bytes) -> bool:
+    mime_type = magic.from_buffer(file_bytes, mime=True)
+    return mime_type in ALLOWED_MIME_TYPES
 
 
 def normalize_extension(filename: str) -> str:
@@ -56,22 +89,44 @@ def normalize_extension(filename: str) -> str:
     return ext
 
 
+def sanitize_ocr_text(text: str) -> str:
+    if not text:
+        return ""
+    lines = text.split('\n')
+    sanitized = []
+    for line in lines:
+        line = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', line)
+        sanitized.append(line)
+    return '\n'.join(sanitized)
+
+
 @router.post("/api/upload", response_model=ExtractResult)
 async def upload_invoice(
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty file")
+    client_ip = request.client.host
+    if not check_rate_limit(client_ip, settings.RATE_LIMIT_REQUESTS if hasattr(settings, 'RATE_LIMIT_REQUESTS') else 10, 
+                            settings.RATE_LIMIT_WINDOW_SECONDS if hasattr(settings, 'RATE_LIMIT_WINDOW_SECONDS') else 60):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
+
+    file_bytes = await file.read()
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 10MB)")
+
+    if not validate_file_type(file_bytes):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only images and PDFs allowed.")
+
     ext = normalize_extension(file.filename)
-    ocr_text = extract_text_from_file(content, file.filename)
+    ocr_text = extract_text_from_file(file_bytes, file.filename)
+    ocr_text = sanitize_ocr_text(ocr_text)
     if has_ocr_error(ocr_text):
         raise HTTPException(status_code=422, detail=ocr_text)
     fields = extract_invoice_fields(ocr_text)
     try:
-        img = Image.open(io.BytesIO(content))
+        img = Image.open(io.BytesIO(file_bytes))
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
         jpg_bytes = io.BytesIO()
@@ -79,7 +134,7 @@ async def upload_invoice(
         content = jpg_bytes.getvalue()
         ext = ".jpg"
     except Exception:
-        pass
+        content = file_bytes
     today = date.today()
     saved_path = save_extracted_invoice(
         user_id=current_user.id,
@@ -123,7 +178,7 @@ async def review_invoice(
         temp_files = [f for f in os.listdir(TEMP_DIR) if f.startswith(job_id) and not f.endswith('_ocr.json')]
         if not temp_files:
             raise HTTPException(status_code=404, detail="Upload session expired")
-        image_url = f"/api/temp-file/{temp_files[0]}"
+        image_url = f"/api/temp-file/{job_id}/{temp_files[0].replace(f'{job_id}_', '')}"
         contractors = db.query(Contractor).all()
         sources = db.query(Source).all()
         return templates.TemplateResponse("review.html", {
@@ -138,12 +193,29 @@ async def review_invoice(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.get("/api/temp-file/{filename}")
-async def serve_temp_file(filename: str):
-    file_path = os.path.join(TEMP_DIR, filename)
-    if not os.path.exists(file_path):
+@router.get("/api/temp-file/{job_id}/{filename}")
+async def serve_temp_file(
+    job_id: str,
+    filename: str,
+    current_user: User = Depends(get_current_user)
+):
+    safe_filename = f"{job_id}_{filename}"
+    temp_path = os.path.join(TEMP_DIR, safe_filename)
+    
+    if not validate_file_path(temp_path, TEMP_DIR):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if not os.path.exists(temp_path):
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path)
+    
+    ext = os.path.splitext(filename)[1].lower()
+    media_type = "application/pdf" if ext == ".pdf" else "image/jpeg"
+    
+    return FileResponse(
+        path=temp_path,
+        filename=filename,
+        media_type=media_type
+    )
 
 
 def _parse_extracted_filename(filename: str) -> dict:
@@ -163,7 +235,7 @@ def list_extracted_files(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    root = os.path.join(settings.storage_path, str(current_user.id))
+    root = os.path.join(settings.STORAGE_PATH, str(current_user.id))
     results = []
     invoice_by_path = {}
     for inv in db.query(Invoice).filter(Invoice.user_id == current_user.id).all():
@@ -178,7 +250,7 @@ def list_extracted_files(
                 parsed = _parse_extracted_filename(name)
                 results.append({
                     "filename": name,
-                    "path": os.path.relpath(full, settings.storage_path),
+                    "path": os.path.relpath(full, settings.STORAGE_PATH),
                     "saved_at": datetime.fromtimestamp(os.path.getmtime(full)).isoformat(),
                     "invoice_id": invoice_by_path.get(os.path.realpath(full)),
                     **parsed,
@@ -192,7 +264,7 @@ def download_extracted_file(
     path: str = Query(...),
     current_user: User = Depends(get_current_user),
 ):
-    storage_root = os.path.realpath(settings.storage_path)
+    storage_root = os.path.realpath(settings.STORAGE_PATH)
     user_root = os.path.realpath(os.path.join(storage_root, str(current_user.id)))
     full = os.path.realpath(os.path.join(storage_root, path))
     if not full.startswith(user_root + os.sep):
@@ -230,7 +302,7 @@ def rename_file(
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Failed to rename file: {e}")
 
-    rel_path = os.path.relpath(new_path, settings.storage_path)
+    rel_path = os.path.relpath(new_path, settings.STORAGE_PATH)
     return RenameResult(
         invoice_id=invoice.id,
         filename=os.path.basename(new_path),
@@ -261,7 +333,7 @@ def delete_extracted_file(
             raise HTTPException(status_code=404, detail="Invoice not found")
         full = invoice.file_path
     else:
-        storage_root = os.path.realpath(settings.storage_path)
+        storage_root = os.path.realpath(settings.STORAGE_PATH)
         user_root = os.path.realpath(os.path.join(storage_root, str(current_user.id)))
         full = os.path.realpath(os.path.join(storage_root, path))
         if not full.startswith(user_root + os.sep):
@@ -301,7 +373,7 @@ async def confirm_invoice(
     db: Session = Depends(get_db)
 ):
     temp_dir = "/tmp/invoice_uploads"
-    temp_files = [f for f in os.listdir(temp_dir) if f.startswith(job_id)]
+    temp_files = [f for f in os.listdir(temp_dir) if f.startswith(job_id) and not f.endswith('_ocr.json')]
     if not temp_files:
         raise HTTPException(status_code=404, detail="Upload session expired")
     temp_file_path = os.path.join(temp_dir, temp_files[0])
@@ -401,6 +473,8 @@ def download_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     if not os.path.exists(invoice.file_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
+    if not validate_file_path(invoice.file_path, settings.STORAGE_PATH):
+        raise HTTPException(status_code=403, detail="Access denied")
     return FileResponse(
         path=invoice.file_path,
         filename=os.path.basename(invoice.file_path),
