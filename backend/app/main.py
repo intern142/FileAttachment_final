@@ -1,15 +1,31 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, Request
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, Depends, Request, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
+from pathlib import Path
 
 from app.database import engine, get_db
 from app.models import Base, Contractor, Source, User
 from app.api import auth, routes
 from app.api.auth import get_current_user_optional
 from app.core.config import settings
+from app.utils.security import sanitize_ocr_text, get_relative_file_path
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+TEMPLATE_DIR = BASE_DIR / "frontend" / "templates"
+
+CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com; "
+    "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; "
+    "img-src 'self' data: https:; "
+    "font-src 'self' https://cdn.tailwindcss.com; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
 
 
 @asynccontextmanager
@@ -49,12 +65,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Invoice OCR", lifespan=lifespan)
 
-templates = Jinja2Templates(directory="frontend/templates")
-
-app.mount("/temp", StaticFiles(directory=os.path.join(settings.STORAGE_PATH, "temp")), name="temp")
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 app.include_router(auth.router)
 app.include_router(routes.router)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    response.headers["Content-Security-Policy"] = CSP_POLICY
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 @app.get("/")
