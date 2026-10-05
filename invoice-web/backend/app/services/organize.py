@@ -6,11 +6,9 @@ from decimal import Decimal
 from pathlib import Path
 from sqlalchemy.orm import Session
 
-from ..models import Invoice, InvoiceStatus, AuditLog, Contractor, Source
-from ..schemas import ConfirmRequest
-from ..core.config import get_settings
-
-settings = get_settings()
+from app.models import Invoice, InvoiceStatus, AuditLog, Contractor, Source
+from app.schemas import ConfirmRequest
+from app.core.config import settings
 
 
 def generate_storage_path(
@@ -25,7 +23,7 @@ def generate_storage_path(
     week = f"Week_{week_num:02d}"
     filename = f"{contractor_short}-{source_short}-{invoice_date.strftime('%Y%m%d')}"
     return os.path.join(
-        settings.storage_path,
+        settings.STORAGE_PATH,
         str(user_id),
         quarter,
         month,
@@ -80,7 +78,7 @@ def generate_extracted_storage_path(
     week = f"Week_{week_num:02d}"
     filename = build_invoice_filename(contractor, purchased_from, invoice_date)
     return os.path.join(
-        settings.storage_path,
+        settings.STORAGE_PATH,
         str(user_id),
         quarter,
         month,
@@ -209,7 +207,7 @@ def save_invoice(
         amount=amount,
         file_path=file_path,
         ocr_json=ocr_json,
-        status=InvoiceStatus.confirmed
+        status=InvoiceStatus.CONFIRMED
     )
     db.add(invoice)
     db.commit()

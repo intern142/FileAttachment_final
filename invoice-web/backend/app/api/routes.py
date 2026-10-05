@@ -114,25 +114,28 @@ async def review_invoice(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    ocr_file = os.path.join(TEMP_DIR, f"{job_id}_ocr.json")
-    if not os.path.exists(ocr_file):
-        raise HTTPException(status_code=404, detail="Review session expired")
-    with open(ocr_file) as f:
-        ocr_data = json.load(f)
-    temp_files = [f for f in os.listdir(TEMP_DIR) if f.startswith(job_id) and not f.endswith('_ocr.json')]
-    if not temp_files:
-        raise HTTPException(status_code=404, detail="Upload session expired")
-    image_url = f"/api/temp-file/{temp_files[0]}"
-    contractors = db.query(Contractor).all()
-    sources = db.query(Source).all()
-    return templates.TemplateResponse("review.html", {
-        "request": request,
-        "job_id": job_id,
-        "image_url": image_url,
-        "extracted": ocr_data,
-        "contractors": contractors,
-        "sources": sources
-    })
+    try:
+        ocr_file = os.path.join(TEMP_DIR, f"{job_id}_ocr.json")
+        if not os.path.exists(ocr_file):
+            raise HTTPException(status_code=404, detail="Review session expired")
+        with open(ocr_file) as f:
+            ocr_data = json.load(f)
+        temp_files = [f for f in os.listdir(TEMP_DIR) if f.startswith(job_id) and not f.endswith('_ocr.json')]
+        if not temp_files:
+            raise HTTPException(status_code=404, detail="Upload session expired")
+        image_url = f"/api/temp-file/{temp_files[0]}"
+        contractors = db.query(Contractor).all()
+        sources = db.query(Source).all()
+        return templates.TemplateResponse("review.html", {
+            "request": request,
+            "job_id": job_id,
+            "image_url": image_url,
+            "extracted": ocr_data,
+            "contractors": contractors,
+            "sources": sources
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/api/temp-file/{filename}")
